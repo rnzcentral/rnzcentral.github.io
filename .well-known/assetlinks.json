@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "br.com.rnzcentral.pedrogas",
+        "sha256_cert_fingerprints": ["92:57:60:05:97:65:EE:34:4E:BB:54:09:B1:EF:C1:9F:87:7C:C7:AA:19:50:50:22:8F:CA:7E:3F:5D:05:3B:69"]
+      }
+    }]

@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10221c" />
+    <title>Pedro gás, água e ração</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="supabase-config.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <section class="login-view" id="loginView">
+        <div class="brand-block">
+          <span class="brand-icon"><i data-lucide="flame"></i></span>
+          <p>App operacional</p>
+          <h1>Pedro gás, água e ração</h1>
+        </div>
+
+        <form class="login-card" id="loginForm">
+          <label>
+            Login
+            <input id="loginInput" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            Senha
+            <input id="passwordInput" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="primary-button" type="submit">
+            <i data-lucide="log-in"></i>
+            Entrar
+          </button>
+        </form>
+      </section>
+
+      <section class="app-view hidden" id="appView">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="activeRole">Dono</p>
+            <h1>Pedro gás, água e ração</h1>
+          </div>
+          <button class="icon-button" type="button" id="logoutButton" aria-label="Sair" title="Sair">
+            <i data-lucide="log-out"></i>
+          </button>
+        </header>
+
+        <main>
+          <section class="summary-band">
+            <div>
+              <p>Faturamento de hoje</p>
+              <strong id="todayRevenue">R$ 0</strong>
+              <span id="todayOrders">0 pedidos</span>
+            </div>
+            <button class="primary-button compact" type="button" data-open-tab="orders">
+              <i data-lucide="plus"></i>
+              Novo pedido
+            </button>
+          </section>
+
+          <nav class="tabbar" aria-label="Áreas do app">
+            <button class="tab-button active" type="button" data-tab="orders" data-min-role="driver">
+              <i data-lucide="shopping-cart"></i>
+              Pedidos
+            </button>
+            <button class="tab-button" type="button" data-tab="deliveries" data-min-role="driver">
+              <i data-lucide="truck"></i>
+              Entregas
+            </button>
+            <button class="tab-button" type="button" data-tab="clients" data-min-role="partner">
+              <i data-lucide="users"></i>
+              Clientes
+            </button>
+            <button class="tab-button" type="button" data-tab="products" data-min-role="partner">
+              <i data-lucide="package"></i>
+              Produtos
+            </button>
+            <button class="tab-button" type="button" data-tab="reports" data-min-role="driver">
+              <i data-lucide="chart-column"></i>
+              Relatórios
+            </button>
+            <button class="tab-button" type="button" data-tab="settings" data-min-role="owner">
+              <i data-lucide="settings"></i>
+              Ajustes
+            </button>
+            <button class="tab-button" type="button" data-tab="support" data-min-role="driver">
+              <i data-lucide="headphones"></i>
+              Suporte
+            </button>
+          </nav>
+
+          <section class="panel active" id="orders">
+            <div class="section-heading">
+              <h2>Novo pedido</h2>
+              <span class="status-chip" id="storageStatus">Local</span>
+            </div>
+
+            <form class="form-grid" id="orderForm">
+              <label>
+                Cliente
+                <input id="orderClient" list="clientNames" required placeholder="Nome do cliente" />
+                <datalist id="clientNames"></datalist>
+              </label>
+              <label>
+                Telefone
+                <input id="orderPhone" inputmode="tel" placeholder="WhatsApp" />
+              </label>
+              <label class="full">
+                Endereço de entrega
+                <input id="orderAddress" required placeholder="Rua, número, bairro e referência" />
+              </label>
+              <label>
+                Data da venda
+                <input id="orderSaleDate" type="date" required />
+              </label>
+              <label>
+                Produto
+                <select id="orderProduct" required></select>
+              </label>
+              <label>
+                Quantidade
+                <input id="orderQty" type="number" min="1" value="1" required />
+              </label>
+              <label>
+                Tipo de cliente
+                <select id="orderCustomerType">
+                  <option value="normal">Normal</option>
+                  <option value="merchant">Comerciante</option>
+                </select>
+              </label>
+              <label>
+                Pagamento
+                <select id="orderPayment">
+                  <option>Pix</option>
+                  <option>Dinheiro</option>
+                  <option>Cartão</option>
+                  <option>Fiado</option>
+                </select>
+              </label>
+              <label>
+                Entregador
+                <input id="orderDriver" placeholder="Nome do entregador" />
+              </label>
+              <label>
+                Desconto
+                <input id="orderDiscount" type="number" min="0" step="1" value="0" />
+              </label>
+              <label class="full">
+                Observação
+                <textarea id="orderNote" rows="2" placeholder="Ex.: troco, ponto de referência, urgência"></textarea>
+              </label>
+              <button class="primary-button full" type="submit">
+                <i data-lucide="save"></i>
+                Salvar pedido
+              </button>
+            </form>
+
+            <div class="section-heading list-heading">
+              <h2>Pedidos recentes</h2>
+            <button class="text-button owner-only" type="button" id="clearOrdersButton">
+                <i data-lucide="trash-2"></i>
+                Limpar teste
+              </button>
+            </div>
+            <div class="item-list" id="ordersList"></div>
+          </section>
+
+          <section class="panel" id="deliveries">
+            <div class="section-heading">
+              <h2>Entregas</h2>
+              <span class="status-chip" id="openDeliveriesCount">0 abertas</span>
+            </div>
+            <div class="item-list" id="deliveriesList"></div>
+          </section>
+
+          <section class="panel" id="clients">
+            <div class="section-heading">
+              <h2>Clientes</h2>
+              <span class="status-chip" id="clientsCount">0</span>
+            </div>
+            <form class="form-grid" id="clientForm">
+              <label>
+                Nome
+                <input id="clientName" required placeholder="Nome completo" />
+              </label>
+              <label>
+                Telefone
+                <input id="clientPhone" inputmode="tel" placeholder="WhatsApp" />
+              </label>
+              <label class="full">
+                Endereço padrão
+                <input id="clientAddress" placeholder="Endereço principal" />
+              </label>
+              <label>
+                Tipo
+                <select id="clientType">
+                  <option value="normal">Normal</option>
+                  <option value="merchant">Comerciante</option>
+                </select>
+              </label>
+              <button class="primary-button" type="submit">
+                <i data-lucide="user-plus"></i>
+                Cadastrar
+              </button>
+            </form>
+            <div class="item-list" id="clientsList"></div>
+          </section>
+
+          <section class="panel" id="products">
+            <div class="section-heading">
+              <h2>Catálogo e estoque</h2>
+              <span class="status-chip" id="productsCount">0</span>
+            </div>
+            <form class="form-grid" id="productForm">
+              <label>
+                Produto
+                <input id="productName" required placeholder="Ex.: Ração adulto 15kg" />
+              </label>
+              <label>
+                Categoria
+                <select id="productCategory">
+                  <option value="Gás">Gás</option>
+                  <option value="Água">Água</option>
+                  <option value="Ração">Ração</option>
+                  <option value="Outros">Outros</option>
+                </select>
+              </label>
+              <label>
+                Preço de venda
+                <input id="productPrice" type="number" min="0" step="0.01" required />
+              </label>
+              <label>
+                Custo
+                <input id="productCost" type="number" min="0" step="0.01" value="0" />
+              </label>
+              <label>
+                Estoque atual
+                <input id="productStock" type="number" min="0" step="1" value="0" />
+              </label>
+              <label>
+                Estoque mínimo
+                <input id="productMinStock" type="number" min="0" step="1" value="0" />
+              </label>
+              <button class="primary-button full" type="submit">
+                <i data-lucide="package-plus"></i>
+                Salvar produto
+              </button>
+            </form>
+            <div class="item-list" id="productsList"></div>
+          </section>
+
+          <section class="panel" id="reports">
+            <div class="section-heading">
+              <h2>Relatórios</h2>
+              <div class="segmented-control" id="reportPeriod">
+                <button class="active" type="button" data-period="day">Dia</button>
+                <button type="button" data-period="week">Semana</button>
+                <button type="button" data-period="month">Mês</button>
+                <button type="button" data-period="year">Ano</button>
+              </div>
+            </div>
+            <form class="form-grid report-filters" id="reportFilters">
+              <label>
+                Início
+                <input id="reportStartDate" type="date" />
+              </label>
+              <label>
+                Fim
+                <input id="reportEndDate" type="date" />
+              </label>
+              <label>
+                Produto
+                <select id="reportProductFilter"></select>
+              </label>
+              <label>
+                Pagamento
+                <select id="reportPaymentFilter">
+                  <option value="all">Todos</option>
+                  <option>Pix</option>
+                  <option>Dinheiro</option>
+                  <option>Cartão</option>
+                  <option>Fiado</option>
+                </select>
+              </label>
+            </form>
+            <div class="report-grid">
+              <article><p>Vendas</p><strong id="reportRevenue">R$ 0</strong></article>
+              <article><p>Pedidos</p><strong id="reportOrders">0</strong></article>
+              <article><p>Lucro estimado</p><strong id="reportProfit">R$ 0</strong></article>
+              <article><p>Impostos estimados</p><strong id="reportTaxes">R$ 0</strong></article>
+            </div>
+            <canvas id="reportChart" width="720" height="360"></canvas>
+          </section>
+
+          <section class="panel" id="settings">
+            <div class="section-heading">
+              <h2>Ajustes da empresa</h2>
+              <button class="text-button" type="button" id="resetDataButton">
+                <i data-lucide="rotate-ccw"></i>
+                Restaurar
+              </button>
+            </div>
+            <form class="form-grid" id="settingsForm">
+              <label>
+                Imposto (%)
+                <input id="taxRate" type="number" min="0" step="0.1" />
+              </label>
+              <label>
+                Desconto comerciante (%)
+                <input id="merchantDiscount" type="number" min="0" step="0.1" />
+              </label>
+              <label class="full">
+                Dados da empresa
+                <textarea id="companyData" rows="3"></textarea>
+              </label>
+              <label>
+                Fornecedor
+                <input id="supplierName" />
+              </label>
+              <label>
+                Contato do fornecedor
+                <input id="supplierPhone" inputmode="tel" />
+              </label>
+              <button class="primary-button full" type="submit">
+                <i data-lucide="save"></i>
+                Salvar ajustes
+              </button>
+            </form>
+
+            <div class="section-heading list-heading">
+              <h2>Segurança dos dados</h2>
+              <span class="status-chip" id="dataVersion">v1</span>
+            </div>
+            <div class="cloud-card">
+              <div>
+                <p>Nuvem</p>
+                <strong id="cloudStatus">Não configurada</strong>
+                <span id="cloudHint">Conecte Supabase para sincronizar celulares sem perder dados locais.</span>
+              </div>
+              <label>
+                E-mail da nuvem
+                <input id="cloudEmail" type="email" autocomplete="username" placeholder="seu@email.com" />
+              </label>
+              <label>
+                Senha da nuvem
+                <input id="cloudPassword" type="password" autocomplete="current-password" placeholder="mínimo 6 caracteres" />
+              </label>
+              <div class="backup-actions no-padding">
+                <button class="primary-button" type="button" id="cloudSignUpButton">
+                  <i data-lucide="user-plus"></i>
+                  Criar login
+                </button>
+                <button class="text-button tall" type="button" id="cloudLoginButton">
+                  <i data-lucide="cloud"></i>
+                  Entrar e sincronizar
+                </button>
+              </div>
+            </div>
+            <div class="backup-actions">
+              <button class="primary-button" type="button" id="exportDataButton">
+                <i data-lucide="download"></i>
+                Baixar backup
+              </button>
+              <label class="import-button">
+                <i data-lucide="upload"></i>
+                Restaurar backup
+                <input id="importDataInput" type="file" accept="application/json,.json" />
+              </label>
+            </div>
+            <p class="data-note">Enquanto a nuvem não estiver conectada, faça backup no fim do dia. Depois os dados serão sincronizados sem apagar o histórico.</p>
+          </section>
+
+          <section class="panel" id="support">
+            <div class="section-heading">
+              <h2>Suporte</h2>
+              <span class="status-chip">Fornecedor</span>
+            </div>
+            <div class="support-card">
+              <p>Fornecedor principal</p>
+              <strong id="supportSupplier">Fornecedor não configurado</strong>
+              <span id="supportPhone">Sem contato</span>
+              <a class="primary-button" id="supportCall" href="#">
+                <i data-lucide="phone"></i>
+                Ligar
+              </a>
+            </div>
+            <div class="support-card">
+              <p>Próxima fase</p>
+              <strong>Nuvem segura gratuita</strong>
+              <span>Para sincronizar celulares, será preciso criar ou entrar em uma conta Supabase/Firebase pelo navegador interno quando você autorizar.</span>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
+  </body>
+</html>
