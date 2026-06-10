@@ -1,4 +1,4 @@
 window.PEDRO_SUPABASE = {
-  url: "https://qtmsowngkcmqbwdpukmc.supabase.co",
-  anonKey: "COLE_AQUI_A_ANON_PUBLIC_KEY_DO_SUPABASE"
+  url: "https://bhviwfevchovntyfiahm.supabase.co",
+  anonKey: "sb_publishable_9Tn7INt27kLxOlv9vij5Ig_peEmT8Cn"
 };

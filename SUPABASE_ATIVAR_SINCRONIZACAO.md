@@ -2,16 +2,15 @@
 
 O app ja esta preparado para sincronizar os 3 celulares pela mesma base.
 
-## O que falta
+Status em 10/06/2026: Supabase criado, chave publica configurada e SQL rodado.
 
-1. Abrir o Supabase.
-2. Entrar no projeto `pedro-gas-agua-racao`.
-3. Abrir `Project Settings` > `API`.
-4. Copiar a chave `anon public`.
-5. Colar em `supabase-config.js`, no campo `anonKey`.
-6. Abrir `SQL Editor`.
-7. Rodar todo o conteudo de `supabase-schema.sql`.
-8. Publicar os arquivos de novo no GitHub Pages.
+## Projeto configurado
+
+- Nome: `pedro-gas-agua-racao`
+- Project ref: `bhviwfevchovntyfiahm`
+- URL: `https://bhviwfevchovntyfiahm.supabase.co`
+- Chave publica: configurada em `supabase-config.js`
+- Tabela: `public.business_state`
 
 ## Como conferir
 
@@ -23,8 +22,8 @@ Depois de publicado:
 4. O cartao `Nuvem` deve mostrar `Conectada`.
 5. Toque em `Sincronizar agora`.
 
-Quando isso estiver feito, os celulares que instalarem ou abrirem o app vao usar
-a mesma base de clientes, produtos, vendas e estoque.
+Os celulares que instalarem ou abrirem o app vao usar a mesma base de clientes,
+produtos, vendas e estoque.
 
 ## Observacao de seguranca
 
