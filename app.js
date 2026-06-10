@@ -55,7 +55,9 @@ const defaultState = {
 
 let state = loadState();
 let activeReportPeriod = "day";
-let cloudSession = null;
+let cloudSaveTimer = null;
+let lastCloudSave = "";
+let isSyncingCloud = false;
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -123,6 +125,7 @@ function login(user) {
   state.session = { username: user.username, role: user.role, name: user.name, loggedAt: new Date().toISOString() };
   saveState();
   renderApp();
+  syncWithCloud("login");
 }
 
 function logout() {
@@ -498,19 +501,20 @@ function isCloudConfigured() {
 function renderCloudStatus(message) {
   const status = byId("cloudStatus");
   const hint = byId("cloudHint");
-  if (!status || !hint) return;
+  const storage = byId("storageStatus");
+  if (!status || !hint) {
+    if (storage) storage.textContent = isCloudConfigured() ? "Nuvem pronta" : "Local";
+    return;
+  }
   if (!isCloudConfigured()) {
-    status.textContent = "Não configurada";
-    hint.textContent = "Depois de criar o projeto Supabase, cole URL e anon key em supabase-config.js.";
+    status.textContent = "Nao configurada";
+    hint.textContent = "Cole a anon public key em supabase-config.js e rode supabase-schema.sql no Supabase.";
+    if (storage) storage.textContent = "Local";
     return;
   }
-  if (cloudSession) {
-    status.textContent = "Conectada";
-    hint.textContent = message || "Dados locais serão enviados para a nuvem quando houver alterações.";
-    return;
-  }
-  status.textContent = "Configurada, sem login";
-  hint.textContent = message || "Entre ou crie um login da nuvem para sincronizar.";
+  status.textContent = "Conectada";
+  hint.textContent = message || "Os celulares usam a mesma base assim que entram no app.";
+  if (storage) storage.textContent = "Nuvem";
 }
 
 function renderSupport() {
@@ -570,8 +574,7 @@ function wireEvents() {
   byId("resetDataButton").addEventListener("click", resetData);
   byId("exportDataButton").addEventListener("click", exportData);
   byId("importDataInput").addEventListener("change", importData);
-  byId("cloudSignUpButton").addEventListener("click", () => cloudAuth("signup"));
-  byId("cloudLoginButton").addEventListener("click", () => cloudAuth("login"));
+  byId("cloudSyncButton").addEventListener("click", () => syncWithCloud("manual"));
   document.addEventListener("click", handleOrderAction);
 
   document.querySelectorAll("#reportPeriod button").forEach((button) => {
@@ -784,86 +787,89 @@ async function importData(event) {
   }
 }
 
-async function cloudAuth(mode) {
-  if (!isCloudConfigured()) {
-    alert("Supabase ainda não está configurado. Primeiro cole URL e anon key no arquivo supabase-config.js.");
-    return;
-  }
-  const email = byId("cloudEmail").value.trim();
-  const password = byId("cloudPassword").value;
-  if (!email || password.length < 6) {
-    alert("Informe e-mail e senha com pelo menos 6 caracteres.");
+async function syncWithCloud(reason = "auto") {
+  if (!isCloudConfigured() || isSyncingCloud) {
+    renderCloudStatus();
     return;
   }
 
+  isSyncingCloud = true;
+  renderCloudStatus("Sincronizando dados...");
   try {
-    const endpoint = mode === "signup" ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password";
-    const result = await supabaseFetch(endpoint, {
-      method: "POST",
-      body: JSON.stringify({ email, password })
-    });
-    cloudSession = result.session || result;
-    if (!cloudSession.access_token) throw new Error("Sessão inválida.");
-    await syncWithCloud();
-    renderCloudStatus("Login feito e dados sincronizados.");
-    alert("Nuvem conectada e sincronizada.");
+    const remote = await loadCloudState();
+    if (remote?.data && hasBusinessData(remote.data)) {
+      const merged = mergeStates(state, migrateState(remote.data));
+      state = { ...merged, session: state.session };
+    }
+    await saveCloudState();
+    state.version = DATA_VERSION;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    renderCloudStatus(reason === "manual" ? "Sincronizacao concluida." : "Dados sincronizados.");
+    renderAll();
   } catch (error) {
-    renderCloudStatus("Falha ao conectar. Confira e-mail, senha e configuração.");
-    alert("Não consegui conectar na nuvem ainda. Confira o projeto Supabase e a senha.");
+    renderCloudStatus("Nuvem pendente. Confira a anon key e se o SQL foi rodado no Supabase.");
+  } finally {
+    isSyncingCloud = false;
   }
-}
-
-async function syncWithCloud() {
-  if (!cloudSession) return;
-  const remote = await loadCloudState();
-  if (remote?.data?.orders?.length || remote?.data?.clients?.length || remote?.data?.products?.length) {
-    const merged = mergeStates(state, migrateState(remote.data));
-    state = { ...merged, session: state.session };
-  }
-  await saveCloudState();
-  saveState();
-  renderAll();
 }
 
 function mergeStates(localState, remoteState) {
-  const byIdMap = (items) => new Map(items.map((item) => [item.id, item]));
-  const clients = byIdMap([...(remoteState.clients || []), ...(localState.clients || [])]);
-  const orders = byIdMap([...(remoteState.orders || []), ...(localState.orders || [])]);
-  const products = byIdMap([...(remoteState.products || []), ...(localState.products || [])]);
+  const clients = mergeItems(remoteState.clients, localState.clients);
+  const orders = mergeItems(remoteState.orders, localState.orders);
+  const products = mergeItems(remoteState.products, localState.products);
   return {
     ...localState,
     settings: { ...remoteState.settings, ...localState.settings },
-    products: [...products.values()],
-    clients: [...clients.values()],
-    orders: [...orders.values()],
+    products,
+    clients,
+    orders,
     version: DATA_VERSION
   };
 }
 
-let cloudSaveTimer = null;
+function mergeItems(remoteItems = [], localItems = []) {
+  const items = new Map();
+  [...remoteItems, ...localItems].forEach((item) => {
+    if (!item?.id) return;
+    const current = items.get(item.id);
+    if (!current || itemTimestamp(item) >= itemTimestamp(current)) {
+      items.set(item.id, item);
+    }
+  });
+  return [...items.values()];
+}
+
+function itemTimestamp(item) {
+  return new Date(item.updatedAt || item.createdAt || item.saleDate || 0).getTime();
+}
 
 function queueCloudSave() {
-  if (!cloudSession || !isCloudConfigured()) return;
+  if (!isCloudConfigured() || isSyncingCloud) return;
   clearTimeout(cloudSaveTimer);
-  cloudSaveTimer = setTimeout(() => saveCloudState().catch(() => renderCloudStatus("Alteração local salva; nuvem pendente.")), 900);
+  cloudSaveTimer = setTimeout(() => syncWithCloud("autosave").catch(() => renderCloudStatus("Alteracao local salva; nuvem pendente.")), 900);
 }
 
 async function loadCloudState() {
   const rows = await supabaseFetch("/rest/v1/business_state?id=eq.main&select=data,updated_at", {
-    method: "GET",
-    auth: true
+    method: "GET"
   });
   return Array.isArray(rows) ? rows[0] : null;
 }
 
 async function saveCloudState() {
   const data = { ...state, session: null, version: DATA_VERSION };
+  const serialized = JSON.stringify(data);
+  if (serialized === lastCloudSave) return;
+  lastCloudSave = serialized;
   await supabaseFetch("/rest/v1/business_state", {
     method: "POST",
-    auth: true,
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify({ id: "main", data, updated_at: new Date().toISOString() })
   });
+}
+
+function hasBusinessData(data) {
+  return Boolean(data?.orders?.length || data?.clients?.length || data?.products?.length);
 }
 
 async function supabaseFetch(path, options = {}) {
@@ -873,9 +879,6 @@ async function supabaseFetch(path, options = {}) {
     "Content-Type": "application/json",
     ...(options.headers || {})
   };
-  if (options.auth && cloudSession?.access_token) {
-    headers.Authorization = `Bearer ${cloudSession.access_token}`;
-  }
   const response = await fetch(`${config.url}${path}`, {
     ...options,
     headers
@@ -911,3 +914,6 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   });
 }
+
+
+

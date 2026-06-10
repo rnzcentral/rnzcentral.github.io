@@ -22,6 +22,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow-x: hidden;
 }
 
 button,
@@ -41,10 +42,11 @@ select {
 }
 
 .app-shell {
-  width: min(100%, 860px);
+  width: min(100vw, 920px);
   min-height: 100vh;
   margin: 0 auto;
   background: linear-gradient(180deg, var(--ink) 0 238px, var(--bg) 238px);
+  overflow-x: hidden;
 }
 
 .login-view {
@@ -224,13 +226,22 @@ textarea:focus {
   color: #fff;
 }
 
+.topbar > div {
+  min-width: 0;
+}
+
+.topbar h1,
+.topbar .eyebrow {
+  overflow-wrap: anywhere;
+}
+
 main {
   padding: 0 12px 26px;
 }
 
 .summary-band {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, auto);
   gap: 12px;
   align-items: center;
   min-height: 126px;
@@ -249,8 +260,9 @@ main {
 .summary-band strong {
   display: block;
   margin-top: 8px;
-  font-size: 1.8rem;
+  font-size: clamp(1.35rem, 7vw, 1.8rem);
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .summary-band span {
@@ -264,8 +276,10 @@ main {
   position: sticky;
   top: 0;
   z-index: 5;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(58px, 1fr));
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   gap: 5px;
   margin: 12px -4px 0;
   padding: 7px 4px;
@@ -273,8 +287,13 @@ main {
   backdrop-filter: blur(12px);
 }
 
+.tabbar::-webkit-scrollbar {
+  display: none;
+}
+
 .tab-button {
   display: flex;
+  flex: 0 0 72px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -303,6 +322,7 @@ main {
 
 .section-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -363,9 +383,14 @@ main {
 
 .item-card header {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.item-card header > div {
+  min-width: 0;
 }
 
 .item-card h3,
@@ -448,6 +473,7 @@ main {
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  width: min(100%, 360px);
   gap: 2px;
   padding: 3px;
   border-radius: 8px;
@@ -496,7 +522,8 @@ main {
 .report-grid strong {
   display: block;
   margin-top: 12px;
-  font-size: 1.2rem;
+  font-size: clamp(0.98rem, 4vw, 1.2rem);
+  overflow-wrap: anywhere;
 }
 
 #reportChart {
@@ -631,5 +658,51 @@ main {
 
   .backup-actions {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .login-view {
+    padding: 16px;
+  }
+
+  .topbar {
+    padding-inline: 12px;
+  }
+
+  main {
+    padding-inline: 10px;
+  }
+
+  .summary-band {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-button.compact {
+    width: 100%;
+  }
+
+  .section-heading {
+    align-items: stretch;
+  }
+
+  .section-heading > * {
+    max-width: 100%;
+  }
+
+  .segmented-control {
+    width: 100%;
+  }
+
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .item-card header {
+    display: grid;
+  }
+
+  .money {
+    white-space: normal;
   }
 }

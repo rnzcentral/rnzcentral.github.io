@@ -1,13 +1,13 @@
-﻿const CACHE_NAME = "pedro-gas-app-v5";
+const CACHE_NAME = "pedro-gas-app-v6";
 const APP_FILES = [
-  "/",
-  "/index.html",
-  "/styles.css",
-  "/app.js",
-  "/manifest.json",
-  "/supabase-config.js",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png"
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.json",
+  "./supabase-config.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -26,4 +26,3 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
 });
-
