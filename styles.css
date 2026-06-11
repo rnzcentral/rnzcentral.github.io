@@ -284,6 +284,52 @@ main {
   font-size: 0.86rem;
 }
 
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quick-stats article,
+.order-preview {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.quick-stats p,
+.order-preview span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.quick-stats strong,
+.order-preview strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.order-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f8fbf8;
+}
+
+.order-preview strong {
+  margin-top: 0;
+  color: var(--green);
+  font-size: 1.12rem;
+}
+
 .tabbar {
   position: sticky;
   top: 0;
@@ -519,6 +565,15 @@ main {
   color: var(--red);
 }
 
+.mini-button.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8f2ee;
+  color: var(--green);
+  text-decoration: none;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -702,6 +757,10 @@ main {
   }
 
   .report-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quick-stats {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 

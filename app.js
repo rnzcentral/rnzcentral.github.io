@@ -132,6 +132,16 @@ function calculateOrderTotal(product, qty, customerType, manualDiscount) {
   return Math.max(0, subtotal - merchantDiscount - Number(manualDiscount || 0));
 }
 
+function orderCost(order) {
+  return productCost(order.product) * Number(order.qty || 0);
+}
+
+function orderProfit(order) {
+  const tax = Number(order.total || 0) * (Number(state.settings.taxRate || 0) / 100);
+  return Number(order.total || 0) - tax - orderCost(order);
+}
+
+
 function login(user) {
   state.session = { username: user.username, role: user.role, name: user.name, loggedAt: new Date().toISOString() };
   saveState();
@@ -205,10 +215,18 @@ function todayOrders() {
 function renderSummary() {
   const orders = todayOrders();
   const revenue = orders.reduce((sum, order) => sum + Number(order.total), 0);
+  const profit = orders.reduce((sum, order) => sum + orderProfit(order), 0);
   const openDeliveries = state.orders.filter((order) => ["open", "route"].includes(order.status || "open")).length;
+  const averageTicket = orders.length ? revenue / orders.length : 0;
+  const lowStock = state.products.filter((product) => Number(product.minStock || 0) > 0 && Number(product.stock || 0) <= Number(product.minStock || 0)).length;
   byId("todayRevenue").textContent = formatMoney(revenue);
-  byId("todayOrders").textContent = `${orders.length} venda${orders.length === 1 ? "" : "s"} • ${openDeliveries} entrega${openDeliveries === 1 ? "" : "s"} aberta${openDeliveries === 1 ? "" : "s"}`;
+  byId("todayOrders").textContent = `${orders.length} venda${orders.length === 1 ? "" : "s"} - ${openDeliveries} entrega${openDeliveries === 1 ? "" : "s"} aberta${openDeliveries === 1 ? "" : "s"}`;
+  byId("todayProfit").textContent = formatMoney(profit);
+  byId("averageTicket").textContent = formatMoney(averageTicket);
+  byId("lowStockCount").textContent = String(lowStock);
+  byId("pendingDeliveries").textContent = String(openDeliveries);
 }
+
 
 function renderOrders() {
   const list = byId("ordersList");
@@ -291,7 +309,16 @@ function statusClass(status) {
 
 function renderOrderActions(order) {
   const status = order.status || "open";
-  if (status === "delivered" || status === "canceled") return "";
+  const ownerDelete = state.session?.role === "owner"
+    ? `<button class="mini-button danger" type="button" data-order-action="delete" data-order-id="${order.id}">Excluir</button>`
+    : "";
+  const utilityButtons = `
+    ${order.phone ? `<a class="mini-button link" href="${whatsAppLink(order)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}
+    ${order.address ? `<a class="mini-button link" href="${mapLink(order.address)}" target="_blank" rel="noopener">Mapa</a>` : ""}
+  `;
+  if (status === "delivered" || status === "canceled") {
+    return `<div class="action-row">${utilityButtons}${ownerDelete}</div>`;
+  }
   const cancelButton = state.session?.role === "owner"
     ? `<button class="mini-button danger" type="button" data-order-action="canceled" data-order-id="${order.id}">Cancelar</button>`
     : "";
@@ -299,10 +326,23 @@ function renderOrderActions(order) {
     <div class="action-row">
       <button class="mini-button" type="button" data-order-action="route" data-order-id="${order.id}">Saiu</button>
       <button class="mini-button primary" type="button" data-order-action="delivered" data-order-id="${order.id}">Entregue</button>
+      ${utilityButtons}
       ${cancelButton}
+      ${ownerDelete}
     </div>
   `;
 }
+
+function whatsAppLink(order) {
+  const digits = String(order.phone || "").replace(/\D/g, "");
+  const message = encodeURIComponent(`Pedido Pedro Gas: ${productLabel(order.product)} x${order.qty}. Endereco: ${order.address}`);
+  return `https://wa.me/55${digits}?text=${message}`;
+}
+
+function mapLink(address) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}
+
 
 function productLabel(productIdOrName) {
   return findProduct(productIdOrName)?.name || productIdOrName || "Produto removido";
@@ -325,7 +365,7 @@ function renderProducts() {
   list.innerHTML = [...state.products]
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
     .map((product) => {
-      const lowStock = Number(product.stock || 0) <= Number(product.minStock || 0);
+      const lowStock = Number(product.minStock || 0) > 0 && Number(product.stock || 0) <= Number(product.minStock || 0);
       return `
         <article class="item-card">
           <header>
@@ -354,6 +394,7 @@ function renderProductOptions() {
 
   orderSelect.innerHTML = options || '<option value="">Cadastre um produto primeiro</option>';
   reportSelect.innerHTML = `<option value="all">Todos</option>${options}`;
+  renderOrderPreview();
 }
 
 function renderClients() {
@@ -533,8 +574,12 @@ function renderCloudStatus(message) {
     return;
   }
   status.textContent = "Conectada";
-  hint.textContent = message || "Os celulares usam a mesma base assim que entram no app.";
+  hint.textContent = message || (lastRemoteUpdatedAt ? `Ultima leitura da nuvem: ${formatDateTime(lastRemoteUpdatedAt)}.` : "Os celulares usam a mesma base assim que entram no app.");
   if (storage) storage.textContent = "Nuvem";
+}
+
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
 function renderSupport() {
@@ -590,6 +635,10 @@ function wireEvents() {
   byId("orderClient").addEventListener("change", fillOrderFromClient);
   byId("clientSearch").addEventListener("input", renderClientSearchResults);
   byId("clientSearch").addEventListener("focus", renderClientSearchResults);
+  ["orderProduct", "orderQty", "orderCustomerType", "orderDiscount"].forEach((id) => {
+    byId(id).addEventListener("input", renderOrderPreview);
+    byId(id).addEventListener("change", renderOrderPreview);
+  });
   byId("orderForm").addEventListener("submit", saveOrder);
   byId("clientForm").addEventListener("submit", saveClient);
   byId("productForm").addEventListener("submit", saveProduct);
@@ -673,6 +722,16 @@ function setDefaultSaleDate() {
   input.value = new Date().toISOString().slice(0, 10);
 }
 
+function renderOrderPreview() {
+  const product = byId("orderProduct")?.value;
+  const qty = Number(byId("orderQty")?.value || 1);
+  const customerType = byId("orderCustomerType")?.value || "normal";
+  const discount = Number(byId("orderDiscount")?.value || 0);
+  const total = product ? calculateOrderTotal(product, qty, customerType, discount) : 0;
+  const preview = byId("orderTotalPreview");
+  if (preview) preview.textContent = formatMoney(total);
+}
+
 function saveOrder(event) {
   event.preventDefault();
   const product = byId("orderProduct").value;
@@ -714,6 +773,8 @@ function saveOrder(event) {
   setDefaultSaleDate();
   byId("orderQty").value = 1;
   byId("orderDiscount").value = 0;
+  byId("clientSearch").value = "";
+  renderOrderPreview();
   renderAll();
   syncWithCloud("order");
 }
@@ -724,8 +785,29 @@ function handleOrderAction(event) {
   const order = state.orders.find((item) => item.id === button.dataset.orderId);
   if (!order) return;
   const nextStatus = button.dataset.orderAction;
+  if (nextStatus === "delete") {
+    deleteOrder(order);
+    return;
+  }
   if (nextStatus === "canceled" && !confirm("Cancelar esta venda e devolver o estoque?")) return;
   updateOrderStatus(order, nextStatus);
+}
+
+function deleteOrder(order) {
+  if (state.session?.role !== "owner") {
+    alert("Apenas o dono do projeto pode excluir vendas.");
+    return;
+  }
+  if (!confirm("Excluir esta venda definitivamente?")) return;
+  if (!order.stockRestored && order.status !== "canceled") {
+    const product = findProduct(order.product);
+    if (product) product.stock = Number(product.stock || 0) + Number(order.qty || 0);
+  }
+  state.orders = state.orders.filter((item) => item.id !== order.id);
+  saveState();
+  renderAll();
+  showAppNotice("Venda excluida e estoque ajustado.");
+  syncWithCloud("delete");
 }
 
 function updateOrderStatus(order, nextStatus) {

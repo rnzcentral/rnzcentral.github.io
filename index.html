@@ -61,6 +61,13 @@
             </button>
           </section>
 
+          <section class="quick-stats" aria-label="Indicadores rapidos">
+            <article><p>Lucro hoje</p><strong id="todayProfit">R$ 0</strong></article>
+            <article><p>Ticket medio</p><strong id="averageTicket">R$ 0</strong></article>
+            <article><p>Estoque baixo</p><strong id="lowStockCount">0</strong></article>
+            <article><p>Pendentes</p><strong id="pendingDeliveries">0</strong></article>
+          </section>
+
           <nav class="tabbar" aria-label="Áreas do app">
             <button class="tab-button active" type="button" data-tab="orders" data-min-role="driver">
               <i data-lucide="shopping-cart"></i>
@@ -153,6 +160,10 @@
                 Desconto
                 <input id="orderDiscount" type="number" min="0" step="1" value="0" />
               </label>
+              <div class="order-preview full">
+                <span>Total previsto</span>
+                <strong id="orderTotalPreview">R$ 0</strong>
+              </div>
               <label class="full">
                 Observação
                 <textarea id="orderNote" rows="2" placeholder="Ex.: troco, ponto de referência, urgência"></textarea>
