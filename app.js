@@ -1,6 +1,7 @@
 const STORAGE_KEY = "pedro-gas-app-v2";
 const DATA_VERSION = 2;
 const CLOUD_POLL_MS = 6000;
+const SALES_STATEMENT_PAGE_SIZE = 25;
 
 const roleLabels = {
   owner: "RNZ",
@@ -56,6 +57,7 @@ const defaultState = {
 
 let state = loadState();
 let activeReportPeriod = "day";
+let salesStatementVisibleCount = SALES_STATEMENT_PAGE_SIZE;
 let cloudSaveTimer = null;
 let cloudPollTimer = null;
 let lastCloudSave = "";
@@ -447,6 +449,74 @@ function renderReports() {
   byId("reportTaxes").textContent = formatMoney(taxes);
   byId("reportProfit").textContent = formatMoney(profit);
   drawReportChart(orders);
+  renderSalesStatement(orders);
+}
+
+function renderSalesStatement(orders) {
+  const list = byId("salesStatementList");
+  const count = byId("salesStatementCount");
+  const hint = byId("salesStatementHint");
+  if (!list || !count || !hint) return;
+
+  const sortedOrders = [...orders].sort((a, b) => new Date(b.saleDate || b.createdAt) - new Date(a.saleDate || a.createdAt));
+  const totalOrders = sortedOrders.length;
+  salesStatementVisibleCount = Math.min(Math.max(salesStatementVisibleCount, SALES_STATEMENT_PAGE_SIZE), Math.max(totalOrders, SALES_STATEMENT_PAGE_SIZE));
+  const visibleOrders = sortedOrders.slice(0, salesStatementVisibleCount);
+  const hasMore = visibleOrders.length < totalOrders;
+
+  count.textContent = `${totalOrders} venda${totalOrders === 1 ? "" : "s"}`;
+  hint.textContent = totalOrders
+    ? `Mostrando ${visibleOrders.length} de ${totalOrders} venda${totalOrders === 1 ? "" : "s"} no filtro atual.`
+    : "Nenhuma venda encontrada no filtro atual.";
+
+  if (!totalOrders) {
+    list.innerHTML = '<div class="list-empty">Nenhuma venda encontrada nesse periodo.</div>';
+    return;
+  }
+
+  list.innerHTML = visibleOrders.map((order) => renderStatementOrder(order)).join("") + (hasMore ? '<div class="list-empty">Role para carregar mais vendas.</div>' : "");
+}
+
+function renderStatementOrder(order) {
+  const profit = orderProfit(order);
+  const status = order.status || "open";
+  return `
+    <article class="statement-card">
+      <header>
+        <div>
+          <span class="statement-date">${formatDate(order.saleDate || order.createdAt)}</span>
+          <h3>${escapeHtml(order.client)}</h3>
+          <p>${escapeHtml(order.address || "Sem endereco")}</p>
+        </div>
+        <strong class="money">${formatMoney(order.total)}</strong>
+      </header>
+      <div class="statement-meta">
+        <span>${escapeHtml(productLabel(order.product))} x${order.qty}</span>
+        <span>${escapeHtml(order.payment || "Sem pagamento")}</span>
+        <span class="${statusClass(status)}">${orderStatus[status]}</span>
+        <span>Lucro ${formatMoney(profit)}</span>
+      </div>
+      ${order.note ? `<p class="statement-note">${escapeHtml(order.note)}</p>` : ""}
+    </article>
+  `;
+}
+
+function resetReportStatement() {
+  salesStatementVisibleCount = SALES_STATEMENT_PAGE_SIZE;
+  const list = byId("salesStatementList");
+  if (list) list.scrollTop = 0;
+  renderReports();
+}
+
+function loadMoreStatementRows() {
+  const list = byId("salesStatementList");
+  if (!list) return;
+  const nearBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 80;
+  if (!nearBottom) return;
+  const totalOrders = filterOrdersByPeriod(activeReportPeriod).length;
+  if (salesStatementVisibleCount >= totalOrders) return;
+  salesStatementVisibleCount += SALES_STATEMENT_PAGE_SIZE;
+  renderReports();
 }
 
 function filterOrdersByPeriod(period) {
@@ -463,7 +533,7 @@ function filterOrdersByPeriod(period) {
 
   return state.orders.filter((order) => {
     const saleDate = new Date(order.saleDate || order.createdAt);
-    const productOk = productFilter === "all" || order.product === productFilter;
+    const productOk = productFilter === "all" || order.product === productFilter || order.productName === findProduct(productFilter)?.name;
     const paymentOk = paymentFilter === "all" || order.payment === paymentFilter;
     return order.status !== "canceled" && saleDate >= start && saleDate <= end && productOk && paymentOk;
   });
@@ -665,13 +735,14 @@ function wireEvents() {
       document.querySelectorAll("#reportPeriod button").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       activeReportPeriod = button.dataset.period;
-      renderReports();
+      resetReportStatement();
     });
   });
 
   ["reportStartDate", "reportEndDate", "reportProductFilter", "reportPaymentFilter"].forEach((id) => {
-    byId(id).addEventListener("change", renderReports);
+    byId(id).addEventListener("change", resetReportStatement);
   });
+  byId("salesStatementList").addEventListener("scroll", loadMoreStatementRows);
 }
 
 function fillOrderFromClient() {
