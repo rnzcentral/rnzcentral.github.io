@@ -449,16 +449,16 @@ function renderReports() {
   byId("reportTaxes").textContent = formatMoney(taxes);
   byId("reportProfit").textContent = formatMoney(profit);
   drawReportChart(orders);
-  renderSalesStatement(orders);
+  renderSalesStatement();
 }
 
-function renderSalesStatement(orders) {
+function renderSalesStatement() {
   const list = byId("salesStatementList");
   const count = byId("salesStatementCount");
   const hint = byId("salesStatementHint");
   if (!list || !count || !hint) return;
 
-  const sortedOrders = [...orders].sort((a, b) => new Date(b.saleDate || b.createdAt) - new Date(a.saleDate || a.createdAt));
+  const sortedOrders = filterOrdersForStatement();
   const totalOrders = sortedOrders.length;
   salesStatementVisibleCount = Math.min(Math.max(salesStatementVisibleCount, SALES_STATEMENT_PAGE_SIZE), Math.max(totalOrders, SALES_STATEMENT_PAGE_SIZE));
   const visibleOrders = sortedOrders.slice(0, salesStatementVisibleCount);
@@ -466,39 +466,75 @@ function renderSalesStatement(orders) {
 
   count.textContent = `${totalOrders} venda${totalOrders === 1 ? "" : "s"}`;
   hint.textContent = totalOrders
-    ? `Mostrando ${visibleOrders.length} de ${totalOrders} venda${totalOrders === 1 ? "" : "s"} no filtro atual.`
-    : "Nenhuma venda encontrada no filtro atual.";
+    ? `Mostrando ${visibleOrders.length} de ${totalOrders} venda${totalOrders === 1 ? "" : "s"}, com Hoje e Ontem no topo.`
+    : "Nenhuma venda encontrada no extrato.";
 
   if (!totalOrders) {
-    list.innerHTML = '<div class="list-empty">Nenhuma venda encontrada nesse periodo.</div>';
+    list.innerHTML = '<div class="list-empty">Nenhuma venda encontrada no extrato.</div>';
     return;
   }
 
-  list.innerHTML = visibleOrders.map((order) => renderStatementOrder(order)).join("") + (hasMore ? '<div class="list-empty">Role para carregar mais vendas.</div>' : "");
+  list.innerHTML = renderStatementGroups(visibleOrders) + (hasMore ? '<div class="list-empty">Role para carregar mais vendas.</div>' : "");
+}
+
+function filterOrdersForStatement() {
+  const productFilter = byId("reportProductFilter")?.value || "all";
+  const paymentFilter = byId("reportPaymentFilter")?.value || "all";
+  const start = byId("reportStartDate")?.value ? dateAtStart(byId("reportStartDate").value) : null;
+  const end = byId("reportEndDate")?.value ? dateAtEnd(byId("reportEndDate").value) : null;
+
+  return state.orders
+    .filter((order) => {
+      const saleDate = new Date(order.saleDate || order.createdAt);
+      const productOk = productFilter === "all" || order.product === productFilter || order.productName === findProduct(productFilter)?.name;
+      const paymentOk = paymentFilter === "all" || order.payment === paymentFilter;
+      const startOk = !start || saleDate >= start;
+      const endOk = !end || saleDate <= end;
+      return order.status !== "canceled" && productOk && paymentOk && startOk && endOk;
+    })
+    .sort((a, b) => new Date(b.saleDate || b.createdAt) - new Date(a.saleDate || a.createdAt));
+}
+
+function renderStatementGroups(orders) {
+  let currentGroup = "";
+  return orders.map((order) => {
+    const group = statementDateGroup(order.saleDate || order.createdAt);
+    const heading = group !== currentGroup ? `<div class="statement-day">${escapeHtml(group)}</div>` : "";
+    currentGroup = group;
+    return `${heading}${renderStatementOrder(order)}`;
+  }).join("");
 }
 
 function renderStatementOrder(order) {
-  const profit = orderProfit(order);
   const status = order.status || "open";
   return `
     <article class="statement-card">
-      <header>
-        <div>
-          <span class="statement-date">${formatDate(order.saleDate || order.createdAt)}</span>
+      <span class="statement-date">${formatDate(order.saleDate || order.createdAt)}</span>
+      <div class="statement-main">
+        <div class="statement-info">
           <h3>${escapeHtml(order.client)}</h3>
           <p>${escapeHtml(order.address || "Sem endereco")}</p>
         </div>
         <strong class="money">${formatMoney(order.total)}</strong>
-      </header>
+      </div>
       <div class="statement-meta">
         <span>${escapeHtml(productLabel(order.product))} x${order.qty}</span>
         <span>${escapeHtml(order.payment || "Sem pagamento")}</span>
         <span class="${statusClass(status)}">${orderStatus[status]}</span>
-        <span>Lucro ${formatMoney(profit)}</span>
       </div>
       ${order.note ? `<p class="statement-note">${escapeHtml(order.note)}</p>` : ""}
     </article>
   `;
+}
+
+function statementDateGroup(value) {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Hoje";
+  if (date.toDateString() === yesterday.toDateString()) return "Ontem";
+  return formatDate(value);
 }
 
 function resetReportStatement() {
@@ -513,7 +549,7 @@ function loadMoreStatementRows() {
   if (!list) return;
   const nearBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 80;
   if (!nearBottom) return;
-  const totalOrders = filterOrdersByPeriod(activeReportPeriod).length;
+  const totalOrders = filterOrdersForStatement().length;
   if (salesStatementVisibleCount >= totalOrders) return;
   salesStatementVisibleCount += SALES_STATEMENT_PAGE_SIZE;
   renderReports();

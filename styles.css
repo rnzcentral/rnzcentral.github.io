@@ -665,40 +665,65 @@ main {
 
 .sales-statement-list {
   display: grid;
-  gap: 10px;
+  gap: 0;
   max-height: min(62vh, 620px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 2px 2px 8px;
+  padding: 0 2px 8px;
   scroll-behavior: smooth;
 }
 
-.statement-card {
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 8px 22px rgba(16, 34, 28, 0.06);
+.statement-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 2px 7px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 950;
+  text-transform: uppercase;
 }
 
-.statement-card header {
+.statement-card {
+  padding: 11px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.statement-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
 }
 
+.statement-info {
+  min-width: 0;
+}
+
 .statement-card h3 {
-  margin-top: 3px;
+  margin-top: 2px;
   font-size: 0.98rem;
+  line-height: 1.18;
   overflow-wrap: anywhere;
 }
 
 .statement-card p {
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.statement-card .money {
+  padding-top: 18px;
+  white-space: nowrap;
+  font-size: 0.98rem;
 }
 
 .statement-date {
@@ -712,7 +737,7 @@ main {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 7px;
 }
 
 .statement-meta span {
