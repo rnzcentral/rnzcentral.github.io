@@ -1,4 +1,5 @@
 const STORAGE_KEY = "pedro-gas-app-v2";
+const LOCAL_SNAPSHOT_KEY = "pedro-gas-app-snapshots-v1";
 const DATA_VERSION = 2;
 const CLOUD_POLL_MS = 6000;
 const SALES_STATEMENT_PAGE_SIZE = 25;
@@ -108,6 +109,7 @@ function normalizeSession(session) {
 function saveState() {
   state.version = DATA_VERSION;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  saveLocalSnapshot();
   hasUnsyncedLocalChanges = true;
   queueCloudSave();
 }
@@ -115,6 +117,18 @@ function saveState() {
 function persistStateOnly() {
   state.version = DATA_VERSION;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  saveLocalSnapshot();
+}
+
+function saveLocalSnapshot() {
+  try {
+    const snapshot = { savedAt: new Date().toISOString(), data: { ...state, session: null, version: DATA_VERSION } };
+    const current = JSON.parse(localStorage.getItem(LOCAL_SNAPSHOT_KEY) || "[]");
+    const snapshots = [snapshot, ...current].slice(0, 7);
+    localStorage.setItem(LOCAL_SNAPSHOT_KEY, JSON.stringify(snapshots));
+  } catch {
+    // O app principal continua salvando mesmo se o historico local estiver cheio.
+  }
 }
 
 function formatMoney(value) {
@@ -166,6 +180,7 @@ function logout() {
   stopCloudPolling();
   state.session = null;
   saveState();
+  document.body.classList.add("login-mode");
   byId("appView").classList.add("hidden");
   byId("loginView").classList.remove("hidden");
   if (window.lucide) window.lucide.createIcons();
@@ -199,6 +214,7 @@ function openTab(tabId) {
 }
 
 function renderApp() {
+  document.body.classList.remove("login-mode");
   byId("loginView").classList.add("hidden");
   byId("appView").classList.remove("hidden");
   byId("activeRole").textContent = `${roleLabels[state.session.role]} • ${state.session.name}`;
@@ -537,6 +553,112 @@ function statementDateGroup(value) {
   return formatDate(value);
 }
 
+function statementRows() {
+  return filterOrdersForStatement().map((order) => ({
+    data: formatDate(order.saleDate || order.createdAt),
+    grupo: statementDateGroup(order.saleDate || order.createdAt),
+    nome: order.client || "",
+    endereco: order.address || "",
+    produto: productLabel(order.product),
+    quantidade: Number(order.qty || 0),
+    pagamento: order.payment || "",
+    status: orderStatus[order.status || "open"] || "",
+    valor: Number(order.total || 0),
+    observacao: order.note || ""
+  }));
+}
+
+function exportStatementCsv() {
+  const rows = statementRows();
+  if (!rows.length) {
+    alert("Nao ha vendas no extrato atual para exportar.");
+    return;
+  }
+  const headers = ["data", "grupo", "nome", "endereco", "produto", "quantidade", "pagamento", "status", "valor", "observacao"];
+  const csv = [headers.join(";")]
+    .concat(rows.map((row) => headers.map((key) => csvCell(row[key])).join(";")))
+    .join("\n");
+  downloadFile(`extrato-vendas-${fileDate()}.csv`, "\ufeff" + csv, "text/csv;charset=utf-8");
+}
+
+function exportStatementJson() {
+  const rows = statementRows();
+  if (!rows.length) {
+    alert("Nao ha vendas no extrato atual para exportar.");
+    return;
+  }
+  downloadFile(
+    `extrato-vendas-${fileDate()}.json`,
+    JSON.stringify({ exportedAt: new Date().toISOString(), app: "Pedro gas, agua e racao", rows }, null, 2),
+    "application/json"
+  );
+}
+
+function exportStatementPdf() {
+  const rows = statementRows();
+  if (!rows.length) {
+    alert("Nao ha vendas no extrato atual para exportar.");
+    return;
+  }
+  const existing = document.querySelector(".print-statement");
+  if (existing) existing.remove();
+  const printable = document.createElement("section");
+  printable.className = "print-statement";
+  printable.innerHTML = `
+    <h1>Extrato de vendas</h1>
+    <p>Pedro gas, agua e racao - gerado em ${formatDateTime(new Date().toISOString())}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Nome</th>
+          <th>Endereco</th>
+          <th>Produto</th>
+          <th>Pagamento</th>
+          <th>Status</th>
+          <th>Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.data)}</td>
+            <td>${escapeHtml(row.nome)}</td>
+            <td>${escapeHtml(row.endereco)}</td>
+            <td>${escapeHtml(row.produto)} x${row.quantidade}</td>
+            <td>${escapeHtml(row.pagamento)}</td>
+            <td>${escapeHtml(row.status)}</td>
+            <td>${formatMoney(row.valor)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+  document.body.appendChild(printable);
+  window.print();
+}
+
+function csvCell(value) {
+  const text = String(value ?? "").replace(/"/g, '""');
+  return `"${text}"`;
+}
+
+function fileDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function downloadFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function resetReportStatement() {
   salesStatementVisibleCount = SALES_STATEMENT_PAGE_SIZE;
   const list = byId("salesStatementList");
@@ -763,6 +885,9 @@ function wireEvents() {
   byId("exportDataButton").addEventListener("click", exportData);
   byId("importDataInput").addEventListener("change", importData);
   byId("cloudSyncButton").addEventListener("click", () => syncWithCloud("manual"));
+  byId("exportStatementPdfButton").addEventListener("click", exportStatementPdf);
+  byId("exportStatementCsvButton").addEventListener("click", exportStatementCsv);
+  byId("exportStatementJsonButton").addEventListener("click", exportStatementJson);
   document.addEventListener("click", handleOrderAction);
   document.addEventListener("click", handleClientPick);
 
@@ -779,6 +904,18 @@ function wireEvents() {
     byId(id).addEventListener("change", resetReportStatement);
   });
   byId("salesStatementList").addEventListener("scroll", loadMoreStatementRows);
+  window.addEventListener("online", () => {
+    if (state.session) syncWithCloud("online");
+  });
+  window.addEventListener("focus", () => {
+    if (state.session) syncWithCloud("focus");
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && state.session) syncWithCloud("focus");
+  });
+  window.addEventListener("beforeunload", () => {
+    if (state.session) persistStateOnly();
+  });
 }
 
 function fillOrderFromClient() {
@@ -1074,7 +1211,7 @@ async function syncWithCloud(reason = "auto") {
       const merged = mergeStates(state, remoteState);
       state = { ...merged, session: state.session };
     }
-    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status"].includes(reason);
+    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus"].includes(reason);
     if (shouldUpload) await saveCloudState();
     state.version = DATA_VERSION;
     persistStateOnly();
@@ -1241,6 +1378,8 @@ document.addEventListener("DOMContentLoaded", () => {
     renderApp();
     startCloudPolling();
     syncWithCloud("login");
+  } else {
+    document.body.classList.add("login-mode");
   }
   if (window.lucide) window.lucide.createIcons();
 });

@@ -25,6 +25,10 @@ body {
   overflow-x: hidden;
 }
 
+body.login-mode {
+  background: var(--ink);
+}
+
 button,
 input,
 select,
@@ -61,6 +65,10 @@ select {
   overflow-x: hidden;
 }
 
+body.login-mode .app-shell {
+  background: var(--ink);
+}
+
 .login-view {
   display: grid;
   width: min(100%, 440px);
@@ -70,6 +78,11 @@ select {
   align-content: center;
   gap: 22px;
   padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+}
+
+body.login-mode .login-view {
+  align-content: start;
+  padding-top: max(34px, env(safe-area-inset-top));
 }
 
 .brand-block {
@@ -673,6 +686,21 @@ main {
   scroll-behavior: smooth;
 }
 
+.statement-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.statement-actions .text-button {
+  min-width: 72px;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
 .statement-day {
   position: sticky;
   top: 0;
@@ -769,6 +797,64 @@ main {
 
 .statement-note {
   margin-top: 9px;
+}
+
+.print-statement {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-statement,
+  .print-statement * {
+    visibility: visible;
+  }
+
+  .print-statement {
+    display: block;
+    position: absolute;
+    inset: 0;
+    padding: 18px;
+    color: #111;
+    font-family: Arial, sans-serif;
+  }
+
+  .print-statement h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+  }
+
+  .print-statement p {
+    margin: 0 0 12px;
+    color: #555;
+    font-size: 12px;
+  }
+
+  .print-statement table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+
+  .print-statement th,
+  .print-statement td {
+    padding: 7px 5px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .print-statement th:last-child,
+  .print-statement td:last-child {
+    text-align: right;
+  }
 }
 
 .support-card {
