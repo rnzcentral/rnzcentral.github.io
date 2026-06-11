@@ -1,7 +1,9 @@
 const STORAGE_KEY = "pedro-gas-app-v2";
 const LOCAL_SNAPSHOT_KEY = "pedro-gas-app-snapshots-v1";
+const DEVICE_ID_KEY = "pedro-gas-device-id-v1";
 const DATA_VERSION = 2;
 const CLOUD_POLL_MS = 6000;
+const DEVICE_HEARTBEAT_MS = 60000;
 const SALES_STATEMENT_PAGE_SIZE = 25;
 
 const roleLabels = {
@@ -53,7 +55,8 @@ const defaultState = {
   },
   products: [],
   clients: [],
-  orders: []
+  orders: [],
+  devices: []
 };
 
 let state = loadState();
@@ -65,6 +68,7 @@ let lastCloudSave = "";
 let isSyncingCloud = false;
 let hasUnsyncedLocalChanges = false;
 let lastRemoteUpdatedAt = "";
+let lastDeviceHeartbeat = 0;
 let knownOpenOrderIds = new Set((state.orders || []).filter((order) => ["open", "route"].includes(order.status || "open")).map((order) => order.id));
 
 const money = new Intl.NumberFormat("pt-BR", {
@@ -92,7 +96,8 @@ function migrateState(saved) {
     settings: { ...base.settings, ...(saved.settings || {}) },
     products: Array.isArray(saved.products) ? saved.products : base.products,
     clients: Array.isArray(saved.clients) ? saved.clients : base.clients,
-    orders: Array.isArray(saved.orders) ? saved.orders : base.orders
+    orders: Array.isArray(saved.orders) ? saved.orders : base.orders,
+    devices: Array.isArray(saved.devices) ? saved.devices : base.devices
   };
   migrated.session = normalizeSession(migrated.session);
   return migrated;
@@ -104,6 +109,49 @@ function normalizeSession(session) {
   if (session.role === "partner") return { ...session, username: "master", name: "Master" };
   if (session.role === "driver") return { ...session, username: "logistica", name: "Entregador" };
   return session;
+}
+
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+
+function deviceInfo() {
+  return {
+    userAgent: navigator.userAgent || "Indisponivel",
+    platform: navigator.platform || "Indisponivel",
+    language: navigator.language || "Indisponivel",
+    screen: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
+    appWidth: window.innerWidth,
+    appHeight: window.innerHeight,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Indisponivel",
+    online: navigator.onLine
+  };
+}
+
+function updateCurrentDevice(activity = "ativo") {
+  if (!state.session) return;
+  const id = getDeviceId();
+  const now = new Date().toISOString();
+  const devices = Array.isArray(state.devices) ? state.devices : [];
+  const existing = devices.find((device) => device.id === id);
+  const payload = {
+    id,
+    login: state.session.username,
+    role: state.session.role,
+    name: state.session.name,
+    activity,
+    firstSeenAt: existing?.firstSeenAt || state.session.loggedAt || now,
+    lastSeenAt: now,
+    info: deviceInfo()
+  };
+  if (existing) Object.assign(existing, payload);
+  else devices.push(payload);
+  state.devices = devices;
 }
 
 function saveState() {
@@ -169,6 +217,7 @@ function orderProfit(order) {
 
 function login(user) {
   state.session = normalizeSession({ username: user.username, role: user.role, name: user.name, loggedAt: new Date().toISOString() });
+  updateCurrentDevice("login");
   saveState();
   renderApp();
   startCloudPolling();
@@ -178,6 +227,8 @@ function login(user) {
 
 function logout() {
   stopCloudPolling();
+  updateCurrentDevice("logout");
+  persistStateOnly();
   state.session = null;
   saveState();
   document.body.classList.add("login-mode");
@@ -785,6 +836,52 @@ function renderSettings() {
   const version = byId("dataVersion");
   if (version) version.textContent = `dados v${DATA_VERSION}`;
   renderCloudStatus();
+  renderDeviceSecurity();
+}
+
+function renderDeviceSecurity() {
+  const list = byId("deviceList");
+  const count = byId("deviceCount");
+  if (!list || !count) return;
+  const devices = [...(state.devices || [])].sort((a, b) => new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0));
+  count.textContent = String(devices.length);
+  if (!devices.length) {
+    list.innerHTML = '<div class="list-empty">Nenhum dispositivo registrado ainda.</div>';
+    return;
+  }
+  const currentId = getDeviceId();
+  list.innerHTML = devices.map((device) => {
+    const recent = Date.now() - new Date(device.lastSeenAt || 0).getTime() < 10 * 60 * 1000;
+    const info = device.info || {};
+    const label = roleLabels[device.role] || device.role || "Perfil";
+    return `
+      <article class="device-card ${device.id === currentId ? "current" : ""}">
+        <header>
+          <div>
+            <h3>${escapeHtml(device.name || device.login || "Dispositivo")}</h3>
+            <p>${escapeHtml(label)} - login ${escapeHtml(device.login || "desconhecido")}</p>
+          </div>
+          <span class="badge ${recent ? "success" : ""}">${recent ? "Ativo" : "Inativo"}</span>
+        </header>
+        <div class="device-grid">
+          <span><strong>ID</strong>${escapeHtml(shortDeviceId(device.id))}${device.id === currentId ? " (este)" : ""}</span>
+          <span><strong>Primeiro acesso</strong>${escapeHtml(formatDateTime(device.firstSeenAt || device.lastSeenAt))}</span>
+          <span><strong>Ultima atividade</strong>${escapeHtml(formatDateTime(device.lastSeenAt))}</span>
+          <span><strong>Atividade</strong>${escapeHtml(device.activity || "ativo")}</span>
+          <span><strong>Sistema</strong>${escapeHtml(info.platform || "Indisponivel")}</span>
+          <span><strong>Tela</strong>${escapeHtml(info.screen || "Indisponivel")}</span>
+          <span><strong>Idioma</strong>${escapeHtml(info.language || "Indisponivel")}</span>
+          <span><strong>Fuso</strong>${escapeHtml(info.timezone || "Indisponivel")}</span>
+        </div>
+        <p class="device-agent">${escapeHtml(info.userAgent || "Navegador indisponivel")}</p>
+      </article>
+    `;
+  }).join("");
+}
+
+function shortDeviceId(id) {
+  const text = String(id || "");
+  return text ? `${text.slice(0, 8)}...${text.slice(-4)}` : "sem id";
 }
 
 function supabaseConfig() {
@@ -816,7 +913,9 @@ function renderCloudStatus(message) {
 }
 
 function formatDateTime(value) {
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Indisponivel";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 function renderSupport() {
@@ -1211,7 +1310,8 @@ async function syncWithCloud(reason = "auto") {
       const merged = mergeStates(state, remoteState);
       state = { ...merged, session: state.session };
     }
-    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus"].includes(reason);
+    updateCurrentDevice(reason);
+    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus", "heartbeat"].includes(reason);
     if (shouldUpload) await saveCloudState();
     state.version = DATA_VERSION;
     persistStateOnly();
@@ -1231,12 +1331,14 @@ function mergeStates(localState, remoteState) {
   const clients = mergeItems(remoteState.clients, localState.clients);
   const orders = mergeItems(remoteState.orders, localState.orders);
   const products = mergeItems(remoteState.products, localState.products);
+  const devices = mergeItems(remoteState.devices, localState.devices);
   return {
     ...localState,
     settings: { ...remoteState.settings, ...localState.settings },
     products,
     clients,
     orders,
+    devices,
     version: DATA_VERSION
   };
 }
@@ -1284,14 +1386,18 @@ async function saveCloudState() {
 }
 
 function hasBusinessData(data) {
-  return Boolean(data?.orders?.length || data?.clients?.length || data?.products?.length);
+  return Boolean(data?.orders?.length || data?.clients?.length || data?.products?.length || data?.devices?.length);
 }
 
 function startCloudPolling() {
   if (!isCloudConfigured()) return;
   stopCloudPolling();
   cloudPollTimer = setInterval(() => {
-    if (state.session) syncWithCloud("poll");
+    if (!state.session) return;
+    const now = Date.now();
+    const reason = now - lastDeviceHeartbeat > DEVICE_HEARTBEAT_MS ? "heartbeat" : "poll";
+    if (reason === "heartbeat") lastDeviceHeartbeat = now;
+    syncWithCloud(reason);
   }, CLOUD_POLL_MS);
 }
 
