@@ -41,6 +41,18 @@ select {
   display: none !important;
 }
 
+.app-notice {
+  margin: 0 12px 10px;
+  padding: 12px 14px;
+  border: 1px solid #b7e0cf;
+  border-radius: 8px;
+  background: #e7f6ed;
+  color: var(--green);
+  font-size: 0.88rem;
+  font-weight: 900;
+  box-shadow: var(--shadow);
+}
+
 .app-shell {
   width: min(100vw, 920px);
   min-height: 100vh;
@@ -360,6 +372,43 @@ main {
 .item-list {
   display: grid;
   gap: 10px;
+}
+
+.client-picker {
+  position: relative;
+}
+
+.client-results {
+  display: grid;
+  max-height: 220px;
+  overflow-y: auto;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.client-result-button {
+  display: grid;
+  gap: 2px;
+  min-height: 46px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #eef2ee;
+  color: var(--ink);
+  text-align: left;
+}
+
+.client-result-button strong {
+  font-size: 0.86rem;
+}
+
+.client-result-button span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .list-empty,

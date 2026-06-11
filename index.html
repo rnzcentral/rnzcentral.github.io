@@ -46,6 +46,7 @@
             <i data-lucide="log-out"></i>
           </button>
         </header>
+        <div class="app-notice hidden" id="appNotice" role="status"></div>
 
         <main>
           <section class="summary-band">
@@ -98,8 +99,13 @@
             </div>
 
             <form class="form-grid" id="orderForm">
+              <label class="full client-picker">
+                Pesquisar cliente cadastrado
+                <input id="clientSearch" type="search" autocomplete="off" placeholder="Digite para buscar e toque para selecionar" />
+                <div class="client-results hidden" id="clientSearchResults"></div>
+              </label>
               <label>
-                Cliente
+                Nome do cliente
                 <input id="orderClient" list="clientNames" required placeholder="Nome do cliente" />
                 <datalist id="clientNames"></datalist>
               </label>

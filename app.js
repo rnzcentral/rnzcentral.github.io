@@ -1,5 +1,6 @@
 const STORAGE_KEY = "pedro-gas-app-v2";
 const DATA_VERSION = 2;
+const CLOUD_POLL_MS = 6000;
 
 const roleLabels = {
   owner: "Dono do projeto",
@@ -56,8 +57,12 @@ const defaultState = {
 let state = loadState();
 let activeReportPeriod = "day";
 let cloudSaveTimer = null;
+let cloudPollTimer = null;
 let lastCloudSave = "";
 let isSyncingCloud = false;
+let hasUnsyncedLocalChanges = false;
+let lastRemoteUpdatedAt = "";
+let knownOpenOrderIds = new Set((state.orders || []).filter((order) => ["open", "route"].includes(order.status || "open")).map((order) => order.id));
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -92,7 +97,13 @@ function migrateState(saved) {
 function saveState() {
   state.version = DATA_VERSION;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  hasUnsyncedLocalChanges = true;
   queueCloudSave();
+}
+
+function persistStateOnly() {
+  state.version = DATA_VERSION;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 function formatMoney(value) {
@@ -125,10 +136,13 @@ function login(user) {
   state.session = { username: user.username, role: user.role, name: user.name, loggedAt: new Date().toISOString() };
   saveState();
   renderApp();
+  startCloudPolling();
+  requestNotificationPermission();
   syncWithCloud("login");
 }
 
 function logout() {
+  stopCloudPolling();
   state.session = null;
   saveState();
   byId("appView").classList.add("hidden");
@@ -231,18 +245,23 @@ function renderOrders() {
 }
 
 function renderDeliveries() {
-  const open = state.orders
-    .filter((order) => ["open", "route"].includes(order.status || "open"))
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const open = state.orders.filter((order) => ["open", "route"].includes(order.status || "open"));
   byId("openDeliveriesCount").textContent = `${open.length} aberta${open.length === 1 ? "" : "s"}`;
 
+  const deliveries = state.orders
+    .filter((order) => ["open", "route", "delivered"].includes(order.status || "open"))
+    .sort((a, b) => {
+      const rank = { route: 0, open: 1, delivered: 2 };
+      return (rank[a.status || "open"] - rank[b.status || "open"]) || (new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+    })
+    .slice(0, 30);
   const list = byId("deliveriesList");
-  if (!open.length) {
-    list.innerHTML = '<div class="list-empty">Nenhuma entrega aberta.</div>';
+  if (!deliveries.length) {
+    list.innerHTML = '<div class="list-empty">Nenhuma entrega registrada.</div>';
     return;
   }
 
-  list.innerHTML = open.map((order) => `
+  list.innerHTML = deliveries.map((order) => `
     <article class="item-card">
       <header>
         <div>
@@ -341,6 +360,7 @@ function renderClients() {
   byId("clientsCount").textContent = String(state.clients.length);
   const datalist = byId("clientNames");
   datalist.innerHTML = state.clients.map((client) => `<option value="${escapeAttr(client.name)}"></option>`).join("");
+  renderClientSearchResults();
 
   const list = byId("clientsList");
   if (!state.clients.length) {
@@ -529,6 +549,7 @@ function saveClientFromOrder(order) {
     existing.phone = order.phone || existing.phone;
     existing.address = order.address || existing.address;
     existing.type = order.customerType || existing.type;
+    existing.updatedAt = new Date().toISOString();
     return;
   }
 
@@ -538,7 +559,8 @@ function saveClientFromOrder(order) {
     phone: order.phone,
     address: order.address,
     type: order.customerType,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   });
 }
 
@@ -566,6 +588,8 @@ function wireEvents() {
   });
 
   byId("orderClient").addEventListener("change", fillOrderFromClient);
+  byId("clientSearch").addEventListener("input", renderClientSearchResults);
+  byId("clientSearch").addEventListener("focus", renderClientSearchResults);
   byId("orderForm").addEventListener("submit", saveOrder);
   byId("clientForm").addEventListener("submit", saveClient);
   byId("productForm").addEventListener("submit", saveProduct);
@@ -576,6 +600,7 @@ function wireEvents() {
   byId("importDataInput").addEventListener("change", importData);
   byId("cloudSyncButton").addEventListener("click", () => syncWithCloud("manual"));
   document.addEventListener("click", handleOrderAction);
+  document.addEventListener("click", handleClientPick);
 
   document.querySelectorAll("#reportPeriod button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -594,9 +619,52 @@ function wireEvents() {
 function fillOrderFromClient() {
   const client = state.clients.find((item) => item.name.toLowerCase() === byId("orderClient").value.toLowerCase());
   if (!client) return;
+  fillOrderFieldsFromClient(client);
+}
+
+function fillOrderFieldsFromClient(client) {
+  byId("orderClient").value = client.name || "";
+  byId("clientSearch").value = client.name || "";
   byId("orderPhone").value = client.phone || "";
   byId("orderAddress").value = client.address || "";
   byId("orderCustomerType").value = client.type || "normal";
+  byId("clientSearchResults").classList.add("hidden");
+}
+
+function renderClientSearchResults() {
+  const results = byId("clientSearchResults");
+  if (!results) return;
+  const input = byId("clientSearch");
+  const query = (input?.value || "").trim().toLowerCase();
+  if (!query && document.activeElement !== input) {
+    results.classList.add("hidden");
+    return;
+  }
+  const matches = state.clients
+    .filter((client) => !query || `${client.name} ${client.phone || ""} ${client.address || ""}`.toLowerCase().includes(query))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    .slice(0, 8);
+
+  if (!matches.length) {
+    results.innerHTML = '<div class="list-empty">Nenhum cliente encontrado.</div>';
+    results.classList.toggle("hidden", !query);
+    return;
+  }
+
+  results.innerHTML = matches.map((client) => `
+    <button class="client-result-button" type="button" data-client-id="${escapeAttr(client.id)}">
+      <strong>${escapeHtml(client.name)}</strong>
+      <span>${escapeHtml(client.phone || "Sem telefone")} - ${escapeHtml(client.address || "Sem endereco")}</span>
+    </button>
+  `).join("");
+  results.classList.remove("hidden");
+}
+
+function handleClientPick(event) {
+  const button = event.target.closest("[data-client-id]");
+  if (!button) return;
+  const client = state.clients.find((item) => item.id === button.dataset.clientId);
+  if (client) fillOrderFieldsFromClient(client);
 }
 
 function setDefaultSaleDate() {
@@ -634,7 +702,8 @@ function saveOrder(event) {
     status: "open",
     stockRestored: false,
     saleDate: byId("orderSaleDate").value,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
   state.orders.push(order);
@@ -646,6 +715,7 @@ function saveOrder(event) {
   byId("orderQty").value = 1;
   byId("orderDiscount").value = 0;
   renderAll();
+  syncWithCloud("order");
 }
 
 function handleOrderAction(event) {
@@ -676,6 +746,8 @@ function updateOrderStatus(order, nextStatus) {
 
   saveState();
   renderAll();
+  showAppNotice(nextStatus === "delivered" ? "Entrega marcada como entregue." : "Status da entrega atualizado.");
+  syncWithCloud("status");
 }
 
 function saveProduct(event) {
@@ -714,7 +786,7 @@ function saveClient(event) {
     type: byId("clientType").value
   };
 
-  if (existing) Object.assign(existing, payload);
+  if (existing) Object.assign(existing, payload, { updatedAt: new Date().toISOString() });
   else state.clients.push({ id: crypto.randomUUID(), ...payload, createdAt: new Date().toISOString() });
 
   saveState();
@@ -796,14 +868,21 @@ async function syncWithCloud(reason = "auto") {
   isSyncingCloud = true;
   renderCloudStatus("Sincronizando dados...");
   try {
+    const previousOpenIds = new Set(knownOpenOrderIds);
     const remote = await loadCloudState();
+    const remoteState = remote?.data ? migrateState(remote.data) : null;
+    const isFirstRemoteRead = !lastRemoteUpdatedAt;
     if (remote?.data && hasBusinessData(remote.data)) {
-      const merged = mergeStates(state, migrateState(remote.data));
+      const merged = mergeStates(state, remoteState);
       state = { ...merged, session: state.session };
     }
-    await saveCloudState();
+    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status"].includes(reason);
+    if (shouldUpload) await saveCloudState();
     state.version = DATA_VERSION;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistStateOnly();
+    if (remote?.updated_at) lastRemoteUpdatedAt = remote.updated_at;
+    updateKnownOpenOrders();
+    if (reason === "poll" && !isFirstRemoteRead) notifyNewOpenOrders(previousOpenIds);
     renderCloudStatus(reason === "manual" ? "Sincronizacao concluida." : "Dados sincronizados.");
     renderAll();
   } catch (error) {
@@ -860,16 +939,71 @@ async function saveCloudState() {
   const data = { ...state, session: null, version: DATA_VERSION };
   const serialized = JSON.stringify(data);
   if (serialized === lastCloudSave) return;
-  lastCloudSave = serialized;
   await supabaseFetch("/rest/v1/business_state", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify({ id: "main", data, updated_at: new Date().toISOString() })
   });
+  lastCloudSave = serialized;
+  hasUnsyncedLocalChanges = false;
 }
 
 function hasBusinessData(data) {
   return Boolean(data?.orders?.length || data?.clients?.length || data?.products?.length);
+}
+
+function startCloudPolling() {
+  if (!isCloudConfigured()) return;
+  stopCloudPolling();
+  cloudPollTimer = setInterval(() => {
+    if (state.session) syncWithCloud("poll");
+  }, CLOUD_POLL_MS);
+}
+
+function stopCloudPolling() {
+  clearInterval(cloudPollTimer);
+  cloudPollTimer = null;
+}
+
+function updateKnownOpenOrders() {
+  knownOpenOrderIds = new Set(
+    (state.orders || [])
+      .filter((order) => ["open", "route"].includes(order.status || "open"))
+      .map((order) => order.id)
+  );
+}
+
+function notifyNewOpenOrders(previousOpenIds) {
+  const newOrders = (state.orders || []).filter((order) => {
+    const status = order.status || "open";
+    return ["open", "route"].includes(status) && !previousOpenIds.has(order.id);
+  });
+  if (!newOrders.length) return;
+  const latest = newOrders[newOrders.length - 1];
+  const message = `Novo pedido para entrega: ${latest.client} - ${productLabel(latest.product)} x${latest.qty}`;
+  showAppNotice(message);
+  if (state.session?.role === "driver") {
+    if (navigator.vibrate) navigator.vibrate([180, 80, 180]);
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("Novo pedido Pedro Gas", { body: message, tag: latest.id });
+    }
+  }
+}
+
+function showAppNotice(message) {
+  const notice = byId("appNotice");
+  if (!notice) return;
+  notice.textContent = message;
+  notice.classList.remove("hidden");
+  clearTimeout(showAppNotice.timer);
+  showAppNotice.timer = setTimeout(() => notice.classList.add("hidden"), 9000);
+}
+
+function requestNotificationPermission() {
+  if (state.session?.role !== "driver" || !("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
+  }
 }
 
 async function supabaseFetch(path, options = {}) {
@@ -905,7 +1039,11 @@ function escapeAttr(value) {
 document.addEventListener("DOMContentLoaded", () => {
   wireEvents();
   setDefaultSaleDate();
-  if (state.session) renderApp();
+  if (state.session) {
+    renderApp();
+    startCloudPolling();
+    syncWithCloud("login");
+  }
   if (window.lucide) window.lucide.createIcons();
 });
 
