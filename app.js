@@ -3,8 +3,8 @@ const DATA_VERSION = 2;
 const CLOUD_POLL_MS = 6000;
 
 const roleLabels = {
-  owner: "Dono do projeto",
-  partner: "Sócio master",
+  owner: "RNZ",
+  partner: "Master",
   driver: "Logística"
 };
 
@@ -15,15 +15,15 @@ const roleRank = {
 };
 
 const appUsers = {
-  rnzcentral: {
+  rnz: {
     password: "rnz013",
     role: "owner",
-    name: "Rnz Central"
+    name: "RNZ"
   },
   master: {
     password: "mas123",
     role: "partner",
-    name: "Pedro Pereira Domingos"
+    name: "Master"
   },
   logistica: {
     password: "log123",
@@ -91,7 +91,16 @@ function migrateState(saved) {
     clients: Array.isArray(saved.clients) ? saved.clients : base.clients,
     orders: Array.isArray(saved.orders) ? saved.orders : base.orders
   };
+  migrated.session = normalizeSession(migrated.session);
   return migrated;
+}
+
+function normalizeSession(session) {
+  if (!session) return null;
+  if (session.role === "owner") return { ...session, username: "rnz", name: "RNZ" };
+  if (session.role === "partner") return { ...session, username: "master", name: "Master" };
+  if (session.role === "driver") return { ...session, username: "logistica", name: "Entregador" };
+  return session;
 }
 
 function saveState() {
@@ -143,7 +152,7 @@ function orderProfit(order) {
 
 
 function login(user) {
-  state.session = { username: user.username, role: user.role, name: user.name, loggedAt: new Date().toISOString() };
+  state.session = normalizeSession({ username: user.username, role: user.role, name: user.name, loggedAt: new Date().toISOString() });
   saveState();
   renderApp();
   startCloudPolling();

@@ -1,4 +1,4 @@
-const CACHE_NAME = "pedro-gas-app-v8";
+const CACHE_NAME = "pedro-gas-app-v9";
 const APP_FILES = [
   "./",
   "./index.html",
