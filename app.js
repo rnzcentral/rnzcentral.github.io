@@ -124,13 +124,13 @@ function getDeviceId() {
 
 function deviceInfo() {
   return {
-    userAgent: navigator.userAgent || "Indisponivel",
-    platform: navigator.platform || "Indisponivel",
-    language: navigator.language || "Indisponivel",
+    userAgent: navigator.userAgent || "Indisponível",
+    platform: navigator.platform || "Indisponível",
+    language: navigator.language || "Indisponível",
     screen: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
     appWidth: window.innerWidth,
     appHeight: window.innerHeight,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Indisponivel",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Indisponível",
     online: navigator.onLine
   };
 }
@@ -163,7 +163,7 @@ function currentDeviceRecord() {
 }
 
 function setCurrentDeviceLocation(position) {
-  updateCurrentDevice("localizacao");
+  updateCurrentDevice("localização");
   const device = currentDeviceRecord();
   if (!device) return;
   device.location = {
@@ -229,7 +229,7 @@ function paymentMethods() {
   return [
     { key: "Pix", inputId: "paymentPix" },
     { key: "Dinheiro", inputId: "paymentCash" },
-    { key: "Cartao", inputId: "paymentCard", label: "Cartao" },
+    { key: "Cartão", inputId: "paymentCard", label: "Cartão" },
     { key: "Fiado", inputId: "paymentCredit" }
   ];
 }
@@ -300,7 +300,7 @@ function updatePaymentSplitHint() {
   const { paid } = collectPayments(total);
   const diff = Number((total - paid).toFixed(2));
   if (!paid) {
-    hint.textContent = `Se deixar em branco, o total ${formatMoney(total)} sera salvo como Pix.`;
+    hint.textContent = `Se deixar em branco, o total ${formatMoney(total)} será salvo como Pix.`;
     hint.className = "payment-hint";
   } else if (Math.abs(diff) < 0.01) {
     hint.textContent = `Pagamento fechado: ${formatMoney(paid)}.`;
@@ -522,7 +522,7 @@ function renderOrderActions(order) {
 
 function whatsAppLink(order) {
   const digits = String(order.phone || "").replace(/\D/g, "");
-  const message = encodeURIComponent(`Pedido Pedro Gas: ${productLabel(order.product)} x${order.qty}. Endereco: ${order.address}`);
+  const message = encodeURIComponent(`Pedido Pedro Gás: ${productLabel(order.product)} x${order.qty}. Endereço: ${order.address}`);
   return `https://wa.me/55${digits}?text=${message}`;
 }
 
@@ -689,7 +689,7 @@ function renderStatementOrder(order) {
       <div class="statement-main">
         <div class="statement-info">
           <h3>${escapeHtml(order.client)}</h3>
-          <p>${escapeHtml(order.address || "Sem endereco")}</p>
+          <p>${escapeHtml(order.address || "Sem endereço")}</p>
         </div>
         <strong class="money">${formatMoney(order.total)}</strong>
       </div>
@@ -731,7 +731,7 @@ function statementRows() {
 function exportStatementCsv() {
   const rows = statementRows();
   if (!rows.length) {
-    alert("Nao ha vendas no extrato atual para exportar.");
+    alert("Não há vendas no extrato atual para exportar.");
     return;
   }
   const headers = ["data", "grupo", "nome", "endereco", "produto", "quantidade", "pagamento", "status", "valor", "observacao"];
@@ -744,7 +744,7 @@ function exportStatementCsv() {
 function exportStatementJson() {
   const rows = statementRows();
   if (!rows.length) {
-    alert("Nao ha vendas no extrato atual para exportar.");
+    alert("Não há vendas no extrato atual para exportar.");
     return;
   }
   downloadFile(
@@ -757,7 +757,7 @@ function exportStatementJson() {
 function exportStatementPdf() {
   const rows = statementRows();
   if (!rows.length) {
-    alert("Nao ha vendas no extrato atual para exportar.");
+    alert("Não há vendas no extrato atual para exportar.");
     return;
   }
   const existing = document.querySelector(".print-statement");
@@ -772,7 +772,7 @@ function exportStatementPdf() {
         <tr>
           <th>Data</th>
           <th>Nome</th>
-          <th>Endereco</th>
+          <th>Endereço</th>
           <th>Produto</th>
           <th>Pagamento</th>
           <th>Status</th>
@@ -978,22 +978,22 @@ function renderDeviceSecurity() {
           <span><strong>Primeiro acesso</strong>${escapeHtml(formatDateTime(device.firstSeenAt || device.lastSeenAt))}</span>
           <span><strong>Ultima atividade</strong>${escapeHtml(formatDateTime(device.lastSeenAt))}</span>
           <span><strong>Atividade</strong>${escapeHtml(device.activity || "ativo")}</span>
-          <span><strong>Sistema</strong>${escapeHtml(info.platform || "Indisponivel")}</span>
-          <span><strong>Tela</strong>${escapeHtml(info.screen || "Indisponivel")}</span>
-          <span><strong>Idioma</strong>${escapeHtml(info.language || "Indisponivel")}</span>
-          <span><strong>Fuso</strong>${escapeHtml(info.timezone || "Indisponivel")}</span>
+          <span><strong>Sistema</strong>${escapeHtml(info.platform || "Indisponível")}</span>
+          <span><strong>Tela</strong>${escapeHtml(info.screen || "Indisponível")}</span>
+          <span><strong>Idioma</strong>${escapeHtml(info.language || "Indisponível")}</span>
+          <span><strong>Fuso</strong>${escapeHtml(info.timezone || "Indisponível")}</span>
         </div>
         ${location ? `
           <div class="device-location">
             <div>
-              <strong>Localizacao</strong>
+              <strong>Localização</strong>
               <span>${escapeHtml(Number(location.lat).toFixed(6))}, ${escapeHtml(Number(location.lng).toFixed(6))}</span>
-              <span>Precisao aproximada: ${Math.round(Number(location.accuracy || 0))} m - ${escapeHtml(formatDateTime(location.updatedAt))}</span>
+              <span>Precisão aproximada: ${Math.round(Number(location.accuracy || 0))} m - ${escapeHtml(formatDateTime(location.updatedAt))}</span>
             </div>
             <a class="mini-button link" href="${locationMapLink(location)}" target="_blank" rel="noopener">Mapa</a>
           </div>
-        ` : '<p class="device-agent">Localizacao ainda nao autorizada neste dispositivo.</p>'}
-        <p class="device-agent">${escapeHtml(info.userAgent || "Navegador indisponivel")}</p>
+        ` : '<p class="device-agent">Localização ainda não autorizada neste dispositivo.</p>'}
+        <p class="device-agent">${escapeHtml(info.userAgent || "Navegador indisponível")}</p>
       </article>
     `;
   }).join("");
@@ -1010,19 +1010,19 @@ function updateLocationStatus() {
   if (!status) return;
   const location = currentDeviceRecord()?.location;
   if (location?.updatedAt) {
-    status.textContent = `Ultima localizacao enviada: ${formatDateTime(location.updatedAt)}.`;
+    status.textContent = `Última localização enviada: ${formatDateTime(location.updatedAt)}.`;
     return;
   }
-  status.textContent = "Autorize para RNZ ver a ultima localizacao deste dispositivo.";
+  status.textContent = "Autorize para RNZ ver a última localização deste dispositivo.";
 }
 
 function requestCurrentLocation(manual = true) {
   if (!("geolocation" in navigator)) {
-    if (manual) alert("Este aparelho/navegador nao oferece localizacao para o app.");
+    if (manual) alert("Este aparelho/navegador não oferece localização para o app.");
     updateLocationStatus();
     return Promise.resolve(false);
   }
-  if (manual) showAppNotice("Solicitando permissao de localizacao do aparelho...");
+  if (manual) showAppNotice("Solicitando permissão de localização do aparelho...");
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -1031,11 +1031,11 @@ function requestCurrentLocation(manual = true) {
         saveState();
         renderAll();
         syncWithCloud("location");
-        if (manual) showAppNotice("Localizacao atualizada para seguranca.");
+        if (manual) showAppNotice("Localização atualizada para segurança.");
         resolve(true);
       },
       () => {
-        if (manual) alert("Localizacao nao autorizada. Ative a permissao de localizacao do app no Android/iPhone.");
+        if (manual) alert("Localização não autorizada. Ative a permissão de localização do app no Android/iPhone.");
         updateLocationStatus();
         resolve(false);
       },
@@ -1056,7 +1056,7 @@ async function refreshLocationIfAllowed() {
     }
     await requestCurrentLocation(false);
   } catch {
-    // Se o navegador nao permitir consultar permissao, mantemos apenas a atualizacao manual.
+    // Se o navegador não permitir consultar permissão, mantemos apenas a atualização manual.
   }
 }
 
@@ -1082,7 +1082,7 @@ function renderCloudStatus(message) {
     return;
   }
   if (!isCloudConfigured()) {
-    status.textContent = "Nao configurada";
+    status.textContent = "Não configurada";
     hint.textContent = "Cole a anon public key em supabase-config.js e rode supabase-schema.sql no Supabase.";
     if (storage) storage.textContent = "Local";
     return;
@@ -1094,7 +1094,7 @@ function renderCloudStatus(message) {
 
 function formatDateTime(value) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Indisponivel";
+  if (Number.isNaN(date.getTime())) return "Indisponível";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
@@ -1241,7 +1241,7 @@ function renderClientSearchResults() {
   results.innerHTML = matches.map((client) => `
     <button class="client-result-button" type="button" data-client-id="${escapeAttr(client.id)}">
       <strong>${escapeHtml(client.name)}</strong>
-      <span>${escapeHtml(client.phone || "Sem telefone")} - ${escapeHtml(client.address || "Sem endereco")}</span>
+      <span>${escapeHtml(client.phone || "Sem telefone")} - ${escapeHtml(client.address || "Sem endereço")}</span>
     </button>
   `).join("");
   results.classList.remove("hidden");
@@ -1282,7 +1282,7 @@ function saveOrder(event) {
   const total = calculateOrderTotal(product, qty, customerType, discount);
   const { payments, paid } = collectPayments(total);
   if (Math.abs(Number((paid - total).toFixed(2))) >= 0.01) {
-    alert(`O pagamento dividido precisa fechar o total da venda (${formatMoney(total)}). Atualmente esta em ${formatMoney(paid)}.`);
+    alert(`O pagamento dividido precisa fechar o total da venda (${formatMoney(total)}). Atualmente está em ${formatMoney(paid)}.`);
     return;
   }
   const order = {
@@ -1618,7 +1618,7 @@ function notifyNewOpenOrders(previousOpenIds) {
   if (state.session?.role === "driver") {
     if (navigator.vibrate) navigator.vibrate([180, 80, 180]);
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("Novo pedido Pedro Gas", { body: message, tag: latest.id });
+      new Notification("Novo pedido Pedro Gás", { body: message, tag: latest.id });
     }
   }
 }
