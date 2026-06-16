@@ -181,6 +181,60 @@ textarea {
   resize: vertical;
 }
 
+.payment-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbf8;
+}
+
+.payment-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.payment-heading span {
+  color: var(--ink);
+}
+
+.payment-heading small {
+  font: inherit;
+  font-size: 0.74rem;
+  text-align: right;
+}
+
+.payment-fill-button,
+.payment-hint {
+  grid-column: 1 / -1;
+}
+
+.payment-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.payment-hint.success {
+  color: var(--green);
+}
+
+.payment-hint.warning {
+  color: #8a5a00;
+}
+
+.payment-hint.danger {
+  color: var(--red);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -954,6 +1008,36 @@ main {
   border-top: 1px dashed var(--line);
 }
 
+.device-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #b7e0cf;
+  border-radius: 8px;
+  background: #eef8f2;
+}
+
+.device-location strong,
+.device-location span {
+  display: block;
+}
+
+.device-location strong {
+  color: var(--green);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.device-location span {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
 .text-button.tall {
   min-height: 44px;
 }
@@ -1096,6 +1180,10 @@ main {
   }
 
   .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-split {
     grid-template-columns: 1fr;
   }
 

@@ -4,6 +4,7 @@ const DEVICE_ID_KEY = "pedro-gas-device-id-v1";
 const DATA_VERSION = 2;
 const CLOUD_POLL_MS = 6000;
 const DEVICE_HEARTBEAT_MS = 60000;
+const LOCATION_REFRESH_MS = 5 * 60000;
 const SALES_STATEMENT_PAGE_SIZE = 25;
 
 const roleLabels = {
@@ -69,6 +70,7 @@ let isSyncingCloud = false;
 let hasUnsyncedLocalChanges = false;
 let lastRemoteUpdatedAt = "";
 let lastDeviceHeartbeat = 0;
+let lastLocationRefresh = 0;
 let knownOpenOrderIds = new Set((state.orders || []).filter((order) => ["open", "route"].includes(order.status || "open")).map((order) => order.id));
 
 const money = new Intl.NumberFormat("pt-BR", {
@@ -147,11 +149,29 @@ function updateCurrentDevice(activity = "ativo") {
     activity,
     firstSeenAt: existing?.firstSeenAt || state.session.loggedAt || now,
     lastSeenAt: now,
+    location: existing?.location || null,
     info: deviceInfo()
   };
   if (existing) Object.assign(existing, payload);
   else devices.push(payload);
   state.devices = devices;
+}
+
+function currentDeviceRecord() {
+  const id = getDeviceId();
+  return (state.devices || []).find((device) => device.id === id);
+}
+
+function setCurrentDeviceLocation(position) {
+  updateCurrentDevice("localizacao");
+  const device = currentDeviceRecord();
+  if (!device) return;
+  device.location = {
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    accuracy: position.coords.accuracy,
+    updatedAt: new Date().toISOString()
+  };
 }
 
 function saveState() {
@@ -203,6 +223,95 @@ function calculateOrderTotal(product, qty, customerType, manualDiscount) {
   const subtotal = productPrice(product) * Number(qty || 1);
   const merchantDiscount = customerType === "merchant" ? subtotal * (Number(state.settings.merchantDiscount) / 100) : 0;
   return Math.max(0, subtotal - merchantDiscount - Number(manualDiscount || 0));
+}
+
+function paymentMethods() {
+  return [
+    { key: "Pix", inputId: "paymentPix" },
+    { key: "Dinheiro", inputId: "paymentCash" },
+    { key: "Cartao", inputId: "paymentCard", label: "Cartao" },
+    { key: "Fiado", inputId: "paymentCredit" }
+  ];
+}
+
+function collectPayments(total) {
+  const payments = paymentMethods()
+    .map((method) => ({
+      method: method.key,
+      amount: Number(byId(method.inputId)?.value || 0)
+    }))
+    .filter((payment) => payment.amount > 0);
+  const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  if (!payments.length && total > 0) {
+    return { payments: [{ method: "Pix", amount: total }], paid: total };
+  }
+  return { payments, paid };
+}
+
+function paymentLabel(order) {
+  const payments = Array.isArray(order.payments) && order.payments.length
+    ? order.payments
+    : [{ method: order.payment || "Sem pagamento", amount: Number(order.total || 0) }];
+  return payments.map((payment) => `${payment.method}${payment.amount ? ` ${formatMoney(payment.amount)}` : ""}`).join(" + ");
+}
+
+function orderHasPayment(order, paymentFilter) {
+  if (paymentFilter === "all") return true;
+  const target = normalizePaymentName(paymentFilter);
+  if (normalizePaymentName(order.payment) === target) return true;
+  return Array.isArray(order.payments) && order.payments.some((payment) => normalizePaymentName(payment.method) === target);
+}
+
+function normalizePaymentName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function resetPaymentInputs() {
+  paymentMethods().forEach((method) => {
+    const input = byId(method.inputId);
+    if (input) input.value = "";
+  });
+  updatePaymentSplitHint();
+}
+
+function fillPaymentWithTotal() {
+  resetPaymentInputs();
+  const total = currentOrderTotal();
+  byId("paymentPix").value = total ? total.toFixed(2) : "";
+  updatePaymentSplitHint();
+}
+
+function currentOrderTotal() {
+  const product = byId("orderProduct")?.value;
+  const qty = Number(byId("orderQty")?.value || 1);
+  const customerType = byId("orderCustomerType")?.value || "normal";
+  const discount = Number(byId("orderDiscount")?.value || 0);
+  return product ? calculateOrderTotal(product, qty, customerType, discount) : 0;
+}
+
+function updatePaymentSplitHint() {
+  const hint = byId("paymentSplitHint");
+  if (!hint) return;
+  const total = currentOrderTotal();
+  const { paid } = collectPayments(total);
+  const diff = Number((total - paid).toFixed(2));
+  if (!paid) {
+    hint.textContent = `Se deixar em branco, o total ${formatMoney(total)} sera salvo como Pix.`;
+    hint.className = "payment-hint";
+  } else if (Math.abs(diff) < 0.01) {
+    hint.textContent = `Pagamento fechado: ${formatMoney(paid)}.`;
+    hint.className = "payment-hint success";
+  } else if (diff > 0) {
+    hint.textContent = `Falta distribuir ${formatMoney(diff)}.`;
+    hint.className = "payment-hint warning";
+  } else {
+    hint.textContent = `Pagamento passou ${formatMoney(Math.abs(diff))}.`;
+    hint.className = "payment-hint danger";
+  }
 }
 
 function orderCost(order) {
@@ -328,7 +437,7 @@ function renderOrders() {
         <div class="badge-row">
           <span class="badge">${escapeHtml(productLabel(order.product))} x${order.qty}</span>
           <span class="badge">${formatDate(order.saleDate || order.createdAt)}</span>
-          <span class="badge">${escapeHtml(order.payment)}</span>
+          <span class="badge">${escapeHtml(paymentLabel(order))}</span>
           <span class="badge">${escapeHtml(order.driver || "Sem entregador")}</span>
           <span class="badge ${statusClass(order.status)}">${orderStatus[order.status || "open"]}</span>
           ${order.customerType === "merchant" ? '<span class="badge warning">Comerciante</span>' : ""}
@@ -369,7 +478,7 @@ function renderDeliveries() {
       <div class="badge-row">
         <span class="badge">${escapeHtml(productLabel(order.product))} x${order.qty}</span>
         <span class="badge">${formatDate(order.saleDate || order.createdAt)}</span>
-        <span class="badge">${escapeHtml(order.payment)}</span>
+        <span class="badge">${escapeHtml(paymentLabel(order))}</span>
         <span class="badge">${escapeHtml(order.driver || "Sem entregador")}</span>
       </div>
       ${order.note ? `<p>${escapeHtml(order.note)}</p>` : ""}
@@ -554,7 +663,7 @@ function filterOrdersForStatement() {
     .filter((order) => {
       const saleDate = new Date(order.saleDate || order.createdAt);
       const productOk = productFilter === "all" || order.product === productFilter || order.productName === findProduct(productFilter)?.name;
-      const paymentOk = paymentFilter === "all" || order.payment === paymentFilter;
+      const paymentOk = orderHasPayment(order, paymentFilter);
       const startOk = !start || saleDate >= start;
       const endOk = !end || saleDate <= end;
       return order.status !== "canceled" && productOk && paymentOk && startOk && endOk;
@@ -586,7 +695,7 @@ function renderStatementOrder(order) {
       </div>
       <div class="statement-meta">
         <span>${escapeHtml(productLabel(order.product))} x${order.qty}</span>
-        <span>${escapeHtml(order.payment || "Sem pagamento")}</span>
+        <span>${escapeHtml(paymentLabel(order))}</span>
         <span class="${statusClass(status)}">${orderStatus[status]}</span>
       </div>
       ${order.note ? `<p class="statement-note">${escapeHtml(order.note)}</p>` : ""}
@@ -612,7 +721,7 @@ function statementRows() {
     endereco: order.address || "",
     produto: productLabel(order.product),
     quantidade: Number(order.qty || 0),
-    pagamento: order.payment || "",
+    pagamento: paymentLabel(order),
     status: orderStatus[order.status || "open"] || "",
     valor: Number(order.total || 0),
     observacao: order.note || ""
@@ -743,7 +852,7 @@ function filterOrdersByPeriod(period) {
   return state.orders.filter((order) => {
     const saleDate = new Date(order.saleDate || order.createdAt);
     const productOk = productFilter === "all" || order.product === productFilter || order.productName === findProduct(productFilter)?.name;
-    const paymentOk = paymentFilter === "all" || order.payment === paymentFilter;
+    const paymentOk = orderHasPayment(order, paymentFilter);
     return order.status !== "canceled" && saleDate >= start && saleDate <= end && productOk && paymentOk;
   });
 }
@@ -853,6 +962,7 @@ function renderDeviceSecurity() {
   list.innerHTML = devices.map((device) => {
     const recent = Date.now() - new Date(device.lastSeenAt || 0).getTime() < 10 * 60 * 1000;
     const info = device.info || {};
+    const location = device.location;
     const label = roleLabels[device.role] || device.role || "Perfil";
     return `
       <article class="device-card ${device.id === currentId ? "current" : ""}">
@@ -873,15 +983,85 @@ function renderDeviceSecurity() {
           <span><strong>Idioma</strong>${escapeHtml(info.language || "Indisponivel")}</span>
           <span><strong>Fuso</strong>${escapeHtml(info.timezone || "Indisponivel")}</span>
         </div>
+        ${location ? `
+          <div class="device-location">
+            <div>
+              <strong>Localizacao</strong>
+              <span>${escapeHtml(Number(location.lat).toFixed(6))}, ${escapeHtml(Number(location.lng).toFixed(6))}</span>
+              <span>Precisao aproximada: ${Math.round(Number(location.accuracy || 0))} m - ${escapeHtml(formatDateTime(location.updatedAt))}</span>
+            </div>
+            <a class="mini-button link" href="${locationMapLink(location)}" target="_blank" rel="noopener">Mapa</a>
+          </div>
+        ` : '<p class="device-agent">Localizacao ainda nao autorizada neste dispositivo.</p>'}
         <p class="device-agent">${escapeHtml(info.userAgent || "Navegador indisponivel")}</p>
       </article>
     `;
   }).join("");
+  updateLocationStatus();
 }
 
 function shortDeviceId(id) {
   const text = String(id || "");
   return text ? `${text.slice(0, 8)}...${text.slice(-4)}` : "sem id";
+}
+
+function updateLocationStatus() {
+  const status = byId("locationStatus");
+  if (!status) return;
+  const location = currentDeviceRecord()?.location;
+  if (location?.updatedAt) {
+    status.textContent = `Ultima localizacao enviada: ${formatDateTime(location.updatedAt)}.`;
+    return;
+  }
+  status.textContent = "Autorize para RNZ ver a ultima localizacao deste dispositivo.";
+}
+
+function requestCurrentLocation(manual = true) {
+  if (!("geolocation" in navigator)) {
+    if (manual) alert("Este aparelho/navegador nao oferece localizacao para o app.");
+    updateLocationStatus();
+    return Promise.resolve(false);
+  }
+  if (manual) showAppNotice("Solicitando permissao de localizacao do aparelho...");
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCurrentDeviceLocation(position);
+        lastLocationRefresh = Date.now();
+        saveState();
+        renderAll();
+        syncWithCloud("location");
+        if (manual) showAppNotice("Localizacao atualizada para seguranca.");
+        resolve(true);
+      },
+      () => {
+        if (manual) alert("Localizacao nao autorizada. Ative a permissao de localizacao do app no Android/iPhone.");
+        updateLocationStatus();
+        resolve(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  });
+}
+
+async function refreshLocationIfAllowed() {
+  if (!state.session || !("geolocation" in navigator)) return;
+  if (Date.now() - lastLocationRefresh < LOCATION_REFRESH_MS) return;
+  try {
+    if (navigator.permissions?.query) {
+      const permission = await navigator.permissions.query({ name: "geolocation" });
+      if (permission.state !== "granted") return;
+    } else if (!currentDeviceRecord()?.location) {
+      return;
+    }
+    await requestCurrentLocation(false);
+  } catch {
+    // Se o navegador nao permitir consultar permissao, mantemos apenas a atualizacao manual.
+  }
+}
+
+function locationMapLink(location) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.lat},${location.lng}`)}`;
 }
 
 function supabaseConfig() {
@@ -922,6 +1102,7 @@ function renderSupport() {
   byId("supportSupplier").textContent = state.settings.supplierName || "Fornecedor não configurado";
   byId("supportPhone").textContent = state.settings.supplierPhone || "Sem contato";
   byId("supportCall").href = `tel:${state.settings.supplierPhone || ""}`;
+  updateLocationStatus();
 }
 
 function saveClientFromOrder(order) {
@@ -975,6 +1156,10 @@ function wireEvents() {
     byId(id).addEventListener("input", renderOrderPreview);
     byId(id).addEventListener("change", renderOrderPreview);
   });
+  paymentMethods().forEach((method) => {
+    byId(method.inputId).addEventListener("input", updatePaymentSplitHint);
+  });
+  byId("fillPaymentButton").addEventListener("click", fillPaymentWithTotal);
   byId("orderForm").addEventListener("submit", saveOrder);
   byId("clientForm").addEventListener("submit", saveClient);
   byId("productForm").addEventListener("submit", saveProduct);
@@ -987,6 +1172,7 @@ function wireEvents() {
   byId("exportStatementPdfButton").addEventListener("click", exportStatementPdf);
   byId("exportStatementCsvButton").addEventListener("click", exportStatementCsv);
   byId("exportStatementJsonButton").addEventListener("click", exportStatementJson);
+  byId("updateLocationButton").addEventListener("click", () => requestCurrentLocation(true));
   document.addEventListener("click", handleOrderAction);
   document.addEventListener("click", handleClientPick);
 
@@ -1075,13 +1261,10 @@ function setDefaultSaleDate() {
 }
 
 function renderOrderPreview() {
-  const product = byId("orderProduct")?.value;
-  const qty = Number(byId("orderQty")?.value || 1);
-  const customerType = byId("orderCustomerType")?.value || "normal";
-  const discount = Number(byId("orderDiscount")?.value || 0);
-  const total = product ? calculateOrderTotal(product, qty, customerType, discount) : 0;
+  const total = currentOrderTotal();
   const preview = byId("orderTotalPreview");
   if (preview) preview.textContent = formatMoney(total);
+  updatePaymentSplitHint();
 }
 
 function saveOrder(event) {
@@ -1096,6 +1279,12 @@ function saveOrder(event) {
   const customerType = byId("orderCustomerType").value;
   const discount = Number(byId("orderDiscount").value || 0);
   const productItem = findProduct(product);
+  const total = calculateOrderTotal(product, qty, customerType, discount);
+  const { payments, paid } = collectPayments(total);
+  if (Math.abs(Number((paid - total).toFixed(2))) >= 0.01) {
+    alert(`O pagamento dividido precisa fechar o total da venda (${formatMoney(total)}). Atualmente esta em ${formatMoney(paid)}.`);
+    return;
+  }
   const order = {
     id: crypto.randomUUID(),
     client: byId("orderClient").value.trim(),
@@ -1105,11 +1294,12 @@ function saveOrder(event) {
     productName: productItem.name,
     qty,
     customerType,
-    payment: byId("orderPayment").value,
+    payment: payments.map((payment) => payment.method).join(" + "),
+    payments,
     driver: byId("orderDriver").value.trim(),
     discount,
     note: byId("orderNote").value.trim(),
-    total: calculateOrderTotal(product, qty, customerType, discount),
+    total,
     status: "open",
     stockRestored: false,
     saleDate: byId("orderSaleDate").value,
@@ -1126,6 +1316,7 @@ function saveOrder(event) {
   byId("orderQty").value = 1;
   byId("orderDiscount").value = 0;
   byId("clientSearch").value = "";
+  resetPaymentInputs();
   renderOrderPreview();
   renderAll();
   syncWithCloud("order");
@@ -1311,7 +1502,7 @@ async function syncWithCloud(reason = "auto") {
       state = { ...merged, session: state.session };
     }
     updateCurrentDevice(reason);
-    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus", "heartbeat"].includes(reason);
+    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus", "heartbeat", "location"].includes(reason);
     if (shouldUpload) await saveCloudState();
     state.version = DATA_VERSION;
     persistStateOnly();
@@ -1397,6 +1588,7 @@ function startCloudPolling() {
     const now = Date.now();
     const reason = now - lastDeviceHeartbeat > DEVICE_HEARTBEAT_MS ? "heartbeat" : "poll";
     if (reason === "heartbeat") lastDeviceHeartbeat = now;
+    if (reason === "heartbeat") refreshLocationIfAllowed();
     syncWithCloud(reason);
   }, CLOUD_POLL_MS);
 }
