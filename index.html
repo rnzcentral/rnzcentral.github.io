@@ -42,11 +42,38 @@
             <p class="eyebrow" id="activeRole">Dono</p>
             <h1>Pedro gás, água e ração</h1>
           </div>
-          <button class="icon-button" type="button" id="logoutButton" aria-label="Sair" title="Sair">
-            <i data-lucide="log-out"></i>
-          </button>
+          <div class="topbar-actions">
+            <button class="sos-button" type="button" id="panicButton" aria-label="Emergência" title="Emergência">
+              SOS
+            </button>
+            <button class="icon-button" type="button" id="logoutButton" aria-label="Sair" title="Sair">
+              <i data-lucide="log-out"></i>
+            </button>
+          </div>
         </header>
         <div class="app-notice hidden" id="appNotice" role="status"></div>
+        <section class="emergency-overlay hidden" id="emergencyOverlay" role="alert">
+          <div class="emergency-panel">
+            <span class="emergency-siren">SOS</span>
+            <h2>Alerta de emergência</h2>
+            <p id="emergencyMessage">Um dispositivo acionou o alerta.</p>
+            <div class="emergency-details" id="emergencyDetails"></div>
+            <div class="emergency-actions">
+              <a class="primary-button" id="emergencyMapLink" href="#" target="_blank" rel="noopener">
+                <i data-lucide="map-pin"></i>
+                Ver mapa
+              </a>
+              <button class="text-button" type="button" id="stopSirenButton">
+                <i data-lucide="volume-x"></i>
+                Silenciar
+              </button>
+              <button class="primary-button danger" type="button" id="resolveEmergencyButton">
+                <i data-lucide="shield-check"></i>
+                Encerrar alerta
+              </button>
+            </div>
+          </div>
+        </section>
 
         <main>
           <section class="summary-band">

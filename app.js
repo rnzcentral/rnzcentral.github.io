@@ -5,6 +5,7 @@ const DATA_VERSION = 2;
 const CLOUD_POLL_MS = 6000;
 const DEVICE_HEARTBEAT_MS = 60000;
 const LOCATION_REFRESH_MS = 5 * 60000;
+const EMERGENCY_LOCATION_MS = 15000;
 const SALES_STATEMENT_PAGE_SIZE = 25;
 
 const roleLabels = {
@@ -56,7 +57,8 @@ const defaultState = {
   products: [],
   clients: [],
   orders: [],
-  devices: []
+  devices: [],
+  emergencyAlerts: []
 };
 
 let state = loadState();
@@ -70,6 +72,9 @@ let hasUnsyncedLocalChanges = false;
 let lastRemoteUpdatedAt = "";
 let lastDeviceHeartbeat = 0;
 let lastLocationRefresh = 0;
+let lastEmergencyLocationRefresh = 0;
+let sirenAudio = null;
+let mutedEmergencyId = "";
 let knownOpenOrderIds = new Set((state.orders || []).filter((order) => ["open", "route"].includes(order.status || "open")).map((order) => order.id));
 
 const money = new Intl.NumberFormat("pt-BR", {
@@ -98,7 +103,8 @@ function migrateState(saved) {
     products: Array.isArray(saved.products) ? saved.products : base.products,
     clients: Array.isArray(saved.clients) ? saved.clients : base.clients,
     orders: Array.isArray(saved.orders) ? saved.orders : base.orders,
-    devices: Array.isArray(saved.devices) ? saved.devices : base.devices
+    devices: Array.isArray(saved.devices) ? saved.devices : base.devices,
+    emergencyAlerts: Array.isArray(saved.emergencyAlerts) ? saved.emergencyAlerts : base.emergencyAlerts
   };
   migrated.session = normalizeSession(migrated.session);
   return migrated;
@@ -391,6 +397,7 @@ function renderAll() {
   renderSettings();
   renderSupport();
   renderReports();
+  renderEmergencyOverlay();
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1104,6 +1111,181 @@ function locationMapLink(location) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.lat},${location.lng}`)}`;
 }
 
+function activeEmergencyAlert() {
+  return [...(state.emergencyAlerts || [])]
+    .filter((alert) => alert.active)
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))[0] || null;
+}
+
+function currentDeviceEmergency() {
+  const deviceId = getDeviceId();
+  return (state.emergencyAlerts || []).find((alert) => alert.active && alert.deviceId === deviceId);
+}
+
+async function triggerEmergencyAlert() {
+  if (!state.session) return;
+  if (!confirm("Acionar alerta de emergência para todos os dispositivos conectados?")) return;
+  updateCurrentDevice("emergência");
+  const now = new Date().toISOString();
+  const alert = {
+    id: crypto.randomUUID(),
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+    deviceId: getDeviceId(),
+    triggeredBy: {
+      login: state.session.username,
+      role: state.session.role,
+      name: state.session.name
+    },
+    location: null,
+    locationTrail: []
+  };
+  state.emergencyAlerts = [alert, ...(state.emergencyAlerts || [])].slice(0, 20);
+  mutedEmergencyId = "";
+  saveState();
+  renderEmergencyOverlay();
+  startEmergencySiren(alert.id);
+  await updateEmergencyLocation(true);
+  syncWithCloud("emergency");
+}
+
+function resolveEmergencyAlert() {
+  const alert = activeEmergencyAlert();
+  if (!alert) return;
+  if (!confirm("Encerrar o alerta de emergência para todos os dispositivos?")) return;
+  alert.active = false;
+  alert.resolvedAt = new Date().toISOString();
+  alert.resolvedBy = state.session ? { login: state.session.username, name: state.session.name, role: state.session.role } : null;
+  alert.updatedAt = new Date().toISOString();
+  stopEmergencySiren();
+  saveState();
+  renderEmergencyOverlay();
+  syncWithCloud("emergency");
+}
+
+function renderEmergencyOverlay() {
+  const overlay = byId("emergencyOverlay");
+  if (!overlay) return;
+  const alert = activeEmergencyAlert();
+  if (!alert) {
+    overlay.classList.add("hidden");
+    stopEmergencySiren();
+    document.body.classList.remove("emergency-mode");
+    return;
+  }
+  document.body.classList.add("emergency-mode");
+  overlay.classList.remove("hidden");
+  const who = alert.triggeredBy?.name || alert.triggeredBy?.login || "Dispositivo";
+  byId("emergencyMessage").textContent = `${who} acionou o alerta.`;
+  const location = alert.location;
+  byId("emergencyDetails").innerHTML = `
+    <span><strong>Perfil</strong>${escapeHtml(roleLabels[alert.triggeredBy?.role] || alert.triggeredBy?.role || "Indisponível")}</span>
+    <span><strong>Início</strong>${escapeHtml(formatDateTime(alert.createdAt))}</span>
+    <span><strong>Última atualização</strong>${escapeHtml(formatDateTime(alert.updatedAt))}</span>
+    <span><strong>Dispositivo</strong>${escapeHtml(shortDeviceId(alert.deviceId))}</span>
+    <span><strong>Localização</strong>${location ? `${escapeHtml(Number(location.lat).toFixed(6))}, ${escapeHtml(Number(location.lng).toFixed(6))}` : "Aguardando permissão/localização"}</span>
+    <span><strong>Precisão</strong>${location?.accuracy ? `${Math.round(Number(location.accuracy))} m` : "Indisponível"}</span>
+  `;
+  const map = byId("emergencyMapLink");
+  if (location) {
+    map.href = locationMapLink(location);
+    map.classList.remove("disabled");
+  } else {
+    map.href = "#";
+    map.classList.add("disabled");
+  }
+  if (alert.id !== mutedEmergencyId) startEmergencySiren(alert.id);
+}
+
+function setEmergencyLocation(position) {
+  const alert = currentDeviceEmergency();
+  if (!alert) return;
+  const location = {
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    accuracy: position.coords.accuracy,
+    updatedAt: new Date().toISOString()
+  };
+  alert.location = location;
+  alert.locationTrail = [location, ...(alert.locationTrail || [])].slice(0, 30);
+  alert.updatedAt = location.updatedAt;
+}
+
+function updateEmergencyLocation(manual = false) {
+  if (!currentDeviceEmergency() || !("geolocation" in navigator)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setEmergencyLocation(position);
+        setCurrentDeviceLocation(position);
+        lastEmergencyLocationRefresh = Date.now();
+        saveState();
+        renderEmergencyOverlay();
+        syncWithCloud("emergency");
+        resolve(true);
+      },
+      () => {
+        if (manual) showAppNotice("Alerta enviado, mas a localização não foi autorizada neste aparelho.");
+        resolve(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
+    );
+  });
+}
+
+function refreshEmergencyLocationIfNeeded() {
+  if (!currentDeviceEmergency()) return;
+  if (Date.now() - lastEmergencyLocationRefresh < EMERGENCY_LOCATION_MS) return;
+  updateEmergencyLocation(false);
+}
+
+function startEmergencySiren(alertId) {
+  if (mutedEmergencyId === alertId || sirenAudio) return;
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = "sawtooth";
+    oscillator.frequency.setValueAtTime(720, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    const interval = setInterval(() => {
+      const t = ctx.currentTime;
+      oscillator.frequency.cancelScheduledValues(t);
+      oscillator.frequency.setValueAtTime(620, t);
+      oscillator.frequency.linearRampToValueAtTime(1180, t + 0.35);
+      gain.gain.cancelScheduledValues(t);
+      gain.gain.setValueAtTime(0.02, t);
+      gain.gain.linearRampToValueAtTime(0.16, t + 0.08);
+      gain.gain.linearRampToValueAtTime(0.02, t + 0.5);
+    }, 520);
+    sirenAudio = { ctx, oscillator, gain, interval };
+  } catch {
+    sirenAudio = null;
+  }
+}
+
+function stopEmergencySiren() {
+  if (!sirenAudio) return;
+  clearInterval(sirenAudio.interval);
+  try {
+    sirenAudio.oscillator.stop();
+    sirenAudio.ctx.close();
+  } catch {}
+  sirenAudio = null;
+}
+
+function silenceEmergencySiren() {
+  const alert = activeEmergencyAlert();
+  if (alert) mutedEmergencyId = alert.id;
+  stopEmergencySiren();
+}
+
 function supabaseConfig() {
   return window.PEDRO_SUPABASE || {};
 }
@@ -1213,6 +1395,9 @@ function wireEvents() {
   byId("exportStatementCsvButton").addEventListener("click", exportStatementCsv);
   byId("exportStatementJsonButton").addEventListener("click", exportStatementJson);
   byId("updateLocationButton").addEventListener("click", () => requestCurrentLocation(true));
+  byId("panicButton").addEventListener("click", triggerEmergencyAlert);
+  byId("resolveEmergencyButton").addEventListener("click", resolveEmergencyAlert);
+  byId("stopSirenButton").addEventListener("click", silenceEmergencySiren);
   document.addEventListener("click", handleOrderAction);
   document.addEventListener("click", handleClientPick);
 
@@ -1533,6 +1718,7 @@ async function syncWithCloud(reason = "auto") {
   renderCloudStatus("Sincronizando dados...");
   try {
     const previousOpenIds = new Set(knownOpenOrderIds);
+    const previousEmergencyIds = new Set((state.emergencyAlerts || []).filter((alert) => alert.active).map((alert) => alert.id));
     const remote = await loadCloudState();
     const remoteState = remote?.data ? migrateState(remote.data) : null;
     const isFirstRemoteRead = !lastRemoteUpdatedAt;
@@ -1541,13 +1727,14 @@ async function syncWithCloud(reason = "auto") {
       state = { ...merged, session: state.session };
     }
     updateCurrentDevice(reason);
-    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus", "heartbeat", "location"].includes(reason);
+    const shouldUpload = hasUnsyncedLocalChanges || ["manual", "login", "autosave", "order", "status", "delete", "online", "focus", "heartbeat", "location", "emergency"].includes(reason);
     if (shouldUpload) await saveCloudState();
     state.version = DATA_VERSION;
     persistStateOnly();
     if (remote?.updated_at) lastRemoteUpdatedAt = remote.updated_at;
     updateKnownOpenOrders();
     if (reason === "poll" && !isFirstRemoteRead) notifyNewOpenOrders(previousOpenIds);
+    if (reason === "poll" && !isFirstRemoteRead) notifyNewEmergencyAlerts(previousEmergencyIds);
     renderCloudStatus(reason === "manual" ? "Sincronizacao concluida." : "Dados sincronizados.");
     renderAll();
   } catch (error) {
@@ -1562,6 +1749,7 @@ function mergeStates(localState, remoteState) {
   const orders = mergeItems(remoteState.orders, localState.orders);
   const products = mergeItems(remoteState.products, localState.products);
   const devices = mergeItems(remoteState.devices, localState.devices);
+  const emergencyAlerts = mergeItems(remoteState.emergencyAlerts, localState.emergencyAlerts);
   return {
     ...localState,
     settings: { ...remoteState.settings, ...localState.settings },
@@ -1569,6 +1757,7 @@ function mergeStates(localState, remoteState) {
     clients,
     orders,
     devices,
+    emergencyAlerts,
     version: DATA_VERSION
   };
 }
@@ -1616,7 +1805,7 @@ async function saveCloudState() {
 }
 
 function hasBusinessData(data) {
-  return Boolean(data?.orders?.length || data?.clients?.length || data?.products?.length || data?.devices?.length);
+  return Boolean(data?.orders?.length || data?.clients?.length || data?.products?.length || data?.devices?.length || data?.emergencyAlerts?.length);
 }
 
 function startCloudPolling() {
@@ -1628,6 +1817,7 @@ function startCloudPolling() {
     const reason = now - lastDeviceHeartbeat > DEVICE_HEARTBEAT_MS ? "heartbeat" : "poll";
     if (reason === "heartbeat") lastDeviceHeartbeat = now;
     if (reason === "heartbeat") refreshLocationIfAllowed();
+    refreshEmergencyLocationIfNeeded();
     syncWithCloud(reason);
   }, CLOUD_POLL_MS);
 }
@@ -1659,6 +1849,20 @@ function notifyNewOpenOrders(previousOpenIds) {
     if ("Notification" in window && Notification.permission === "granted") {
       new Notification("Novo pedido Pedro Gás", { body: message, tag: latest.id });
     }
+  }
+}
+
+function notifyNewEmergencyAlerts(previousEmergencyIds) {
+  const alerts = (state.emergencyAlerts || []).filter((alert) => alert.active && !previousEmergencyIds.has(alert.id));
+  if (!alerts.length) return;
+  const latest = alerts[0];
+  const who = latest.triggeredBy?.name || latest.triggeredBy?.login || "Dispositivo";
+  const message = `SOS acionado por ${who}.`;
+  showAppNotice(message);
+  renderEmergencyOverlay();
+  if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 500]);
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("SOS Pedro Gás", { body: message, tag: latest.id });
   }
 }
 
