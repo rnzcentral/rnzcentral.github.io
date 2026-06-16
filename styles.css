@@ -707,6 +707,47 @@ main {
   overflow-wrap: anywhere;
 }
 
+.weekly-heading {
+  margin-top: 14px;
+  align-items: flex-end;
+}
+
+.weekly-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.weekly-close-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.weekly-close-grid article {
+  min-height: 88px;
+  padding: 13px;
+  border: 1px solid #cfe4d8;
+  border-radius: 8px;
+  background: #f3fbf6;
+}
+
+.weekly-close-grid p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.weekly-close-grid strong {
+  display: block;
+  margin-top: 10px;
+  font-size: clamp(1rem, 4vw, 1.25rem);
+  overflow-wrap: anywhere;
+}
+
 #reportChart {
   display: block;
   width: 100%;
@@ -1180,6 +1221,10 @@ main {
   }
 
   .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .weekly-close-grid {
     grid-template-columns: 1fr;
   }
 

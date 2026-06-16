@@ -136,13 +136,6 @@
                 Quantidade
                 <input id="orderQty" type="number" min="1" value="1" required />
               </label>
-              <label>
-                Tipo de cliente
-                <select id="orderCustomerType">
-                  <option value="normal">Normal</option>
-                  <option value="merchant">Comerciante</option>
-                </select>
-              </label>
               <div class="payment-split full">
                 <div class="payment-heading">
                   <span>Pagamento</span>
@@ -227,13 +220,6 @@
               <label class="full">
                 Endereço padrão
                 <input id="clientAddress" placeholder="Endereço principal" />
-              </label>
-              <label>
-                Tipo
-                <select id="clientType">
-                  <option value="normal">Normal</option>
-                  <option value="merchant">Comerciante</option>
-                </select>
               </label>
               <button class="primary-button" type="submit">
                 <i data-lucide="user-plus"></i>
@@ -326,6 +312,19 @@
               <article><p>Lucro estimado</p><strong id="reportProfit">R$ 0</strong></article>
               <article><p>Impostos estimados</p><strong id="reportTaxes">R$ 0</strong></article>
             </div>
+            <div class="section-heading list-heading weekly-heading">
+              <div>
+                <h2>Fechamento semanal</h2>
+                <p id="weeklyCloseHint">Entradas da semana atual por forma de pagamento.</p>
+              </div>
+              <span class="status-chip" id="weeklyCloseRange">Semana</span>
+            </div>
+            <div class="weekly-close-grid">
+              <article><p>Pix</p><strong id="weeklyPix">R$ 0</strong></article>
+              <article><p>Cartão</p><strong id="weeklyCard">R$ 0</strong></article>
+              <article><p>Dinheiro</p><strong id="weeklyCash">R$ 0</strong></article>
+              <article><p>Total recebido</p><strong id="weeklyReceived">R$ 0</strong></article>
+            </div>
             <canvas id="reportChart" width="720" height="360"></canvas>
             <div class="section-heading list-heading statement-heading">
               <div>
@@ -363,10 +362,6 @@
               <label>
                 Imposto (%)
                 <input id="taxRate" type="number" min="0" step="0.1" />
-              </label>
-              <label>
-                Desconto comerciante (%)
-                <input id="merchantDiscount" type="number" min="0" step="0.1" />
               </label>
               <label class="full">
                 Dados da empresa

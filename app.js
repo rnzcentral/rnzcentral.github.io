@@ -49,7 +49,6 @@ const defaultState = {
   session: null,
   settings: {
     taxRate: 6,
-    merchantDiscount: 8,
     companyData: "",
     supplierName: "",
     supplierPhone: ""
@@ -219,10 +218,9 @@ function findProduct(productIdOrName) {
   return state.products.find((product) => product.id === productIdOrName || product.name === productIdOrName);
 }
 
-function calculateOrderTotal(product, qty, customerType, manualDiscount) {
+function calculateOrderTotal(product, qty, _customerType, manualDiscount) {
   const subtotal = productPrice(product) * Number(qty || 1);
-  const merchantDiscount = customerType === "merchant" ? subtotal * (Number(state.settings.merchantDiscount) / 100) : 0;
-  return Math.max(0, subtotal - merchantDiscount - Number(manualDiscount || 0));
+  return Math.max(0, subtotal - Number(manualDiscount || 0));
 }
 
 function paymentMethods() {
@@ -249,17 +247,20 @@ function collectPayments(total) {
 }
 
 function paymentLabel(order) {
-  const payments = Array.isArray(order.payments) && order.payments.length
+  return orderPayments(order).map((payment) => `${payment.method}${payment.amount ? ` ${formatMoney(payment.amount)}` : ""}`).join(" + ");
+}
+
+function orderPayments(order) {
+  return Array.isArray(order.payments) && order.payments.length
     ? order.payments
     : [{ method: order.payment || "Sem pagamento", amount: Number(order.total || 0) }];
-  return payments.map((payment) => `${payment.method}${payment.amount ? ` ${formatMoney(payment.amount)}` : ""}`).join(" + ");
 }
 
 function orderHasPayment(order, paymentFilter) {
   if (paymentFilter === "all") return true;
   const target = normalizePaymentName(paymentFilter);
   if (normalizePaymentName(order.payment) === target) return true;
-  return Array.isArray(order.payments) && order.payments.some((payment) => normalizePaymentName(payment.method) === target);
+  return orderPayments(order).some((payment) => normalizePaymentName(payment.method) === target);
 }
 
 function normalizePaymentName(value) {
@@ -288,9 +289,8 @@ function fillPaymentWithTotal() {
 function currentOrderTotal() {
   const product = byId("orderProduct")?.value;
   const qty = Number(byId("orderQty")?.value || 1);
-  const customerType = byId("orderCustomerType")?.value || "normal";
   const discount = Number(byId("orderDiscount")?.value || 0);
-  return product ? calculateOrderTotal(product, qty, customerType, discount) : 0;
+  return product ? calculateOrderTotal(product, qty, "normal", discount) : 0;
 }
 
 function updatePaymentSplitHint() {
@@ -440,7 +440,6 @@ function renderOrders() {
           <span class="badge">${escapeHtml(paymentLabel(order))}</span>
           <span class="badge">${escapeHtml(order.driver || "Sem entregador")}</span>
           <span class="badge ${statusClass(order.status)}">${orderStatus[order.status || "open"]}</span>
-          ${order.customerType === "merchant" ? '<span class="badge warning">Comerciante</span>' : ""}
         </div>
         ${order.note ? `<p>${escapeHtml(order.note)}</p>` : ""}
         ${renderOrderActions(order)}
@@ -605,7 +604,7 @@ function renderClients() {
             <h3>${escapeHtml(client.name)}</h3>
             <p>${escapeHtml(client.address || "Sem endereço")}</p>
           </div>
-          <span class="badge ${client.type === "merchant" ? "warning" : ""}">${client.type === "merchant" ? "Comerciante" : "Normal"}</span>
+          <span class="badge">Cliente</span>
         </header>
         <p>${escapeHtml(client.phone || "Sem telefone")}</p>
       </article>
@@ -624,8 +623,49 @@ function renderReports() {
   byId("reportOrders").textContent = String(orders.length);
   byId("reportTaxes").textContent = formatMoney(taxes);
   byId("reportProfit").textContent = formatMoney(profit);
+  renderWeeklyClose();
   drawReportChart(orders);
   renderSalesStatement();
+}
+
+function renderWeeklyClose() {
+  const range = currentWeekRange();
+  const weeklyOrders = state.orders.filter((order) => {
+    const saleDate = new Date(order.saleDate || order.createdAt);
+    return order.status !== "canceled" && saleDate >= range.start && saleDate <= range.end;
+  });
+  const totals = paymentTotals(weeklyOrders);
+  const pix = totals.pix || 0;
+  const card = totals.cartao || 0;
+  const cash = totals.dinheiro || 0;
+  byId("weeklyPix").textContent = formatMoney(pix);
+  byId("weeklyCard").textContent = formatMoney(card);
+  byId("weeklyCash").textContent = formatMoney(cash);
+  byId("weeklyReceived").textContent = formatMoney(pix + card + cash);
+  byId("weeklyCloseRange").textContent = `${formatDate(range.start)} a ${formatDate(range.end)}`;
+}
+
+function paymentTotals(orders) {
+  return orders.reduce((totals, order) => {
+    orderPayments(order).forEach((payment) => {
+      const key = normalizePaymentName(payment.method);
+      totals[key] = (totals[key] || 0) + Number(payment.amount || 0);
+    });
+    return totals;
+  }, {});
+}
+
+function currentWeekRange() {
+  const now = new Date();
+  const start = new Date(now);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
 }
 
 function renderSalesStatement() {
@@ -1152,7 +1192,7 @@ function wireEvents() {
   byId("orderClient").addEventListener("change", fillOrderFromClient);
   byId("clientSearch").addEventListener("input", renderClientSearchResults);
   byId("clientSearch").addEventListener("focus", renderClientSearchResults);
-  ["orderProduct", "orderQty", "orderCustomerType", "orderDiscount"].forEach((id) => {
+  ["orderProduct", "orderQty", "orderDiscount"].forEach((id) => {
     byId(id).addEventListener("input", renderOrderPreview);
     byId(id).addEventListener("change", renderOrderPreview);
   });
@@ -1214,7 +1254,6 @@ function fillOrderFieldsFromClient(client) {
   byId("clientSearch").value = client.name || "";
   byId("orderPhone").value = client.phone || "";
   byId("orderAddress").value = client.address || "";
-  byId("orderCustomerType").value = client.type || "normal";
   byId("clientSearchResults").classList.add("hidden");
 }
 
@@ -1276,7 +1315,7 @@ function saveOrder(event) {
     return;
   }
   const qty = Number(byId("orderQty").value || 1);
-  const customerType = byId("orderCustomerType").value;
+  const customerType = "normal";
   const discount = Number(byId("orderDiscount").value || 0);
   const productItem = findProduct(product);
   const total = calculateOrderTotal(product, qty, customerType, discount);
@@ -1408,7 +1447,7 @@ function saveClient(event) {
     name,
     phone: byId("clientPhone").value.trim(),
     address: byId("clientAddress").value.trim(),
-    type: byId("clientType").value
+    type: "normal"
   };
 
   if (existing) Object.assign(existing, payload, { updatedAt: new Date().toISOString() });
